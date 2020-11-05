@@ -1,0 +1,30 @@
+how to build from code run ?
+./gradlew tasks --all
+Flux<Integer> intFlux = Flux.range(1, 1000);
+Flux.mergeLast
+Consumer<Integer> consumer = new Consumer<Integer>() {
+		public void accept(Integer integer) {
+			System.out.println(integer);
+		};
+	};
+intFlux.subscribe(consumer)
+	intFlux.subscribeWith(new LambdaSubscriber<>(consumer, errorConsumer,
+        				completeConsumer,
+        				null,
+        				initialContext));//在此new一个subscriber
+		subscribeWith(
+			subscribe(subscriber);
+				publisher.subscribe(subscriber);
+					actual = subscriber
+					actual.onSubscribe(new RangeSubscription(actual, st, en));
+					##上面方法签名 onSubscribe(Subscription s)
+						this.subscription = s;//拿到 subscription
+						s.request(Long.MAX_VALUE);
+							Subscriber<? super Integer> a = actual;
+							a.onNext((int) i);
+								consumer.accept(x);
+									System.out.println(integer);
+FluxNever.subscribe(consumer)
+	consumer.onSubscribe(
+
+MonoNever
