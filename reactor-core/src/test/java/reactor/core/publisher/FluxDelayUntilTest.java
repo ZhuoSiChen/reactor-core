@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscription;
 import reactor.core.Disposable;
@@ -185,10 +185,10 @@ public class FluxDelayUntilTest {
 		            .then(() -> assertThat(generator1Used.get()).isZero())
 		            .then(() -> assertThat(generator2Used.get()).isZero())
 		            .expectNoEvent(Duration.ofMillis(100))
-		            .then(() -> assertThat(generator1Used.get()).isEqualTo(1))
-		            .then(() -> assertThat(generator2Used.get()).isEqualTo(0))
+		            .then(() -> assertThat(generator1Used).hasValue(1))
+		            .then(() -> assertThat(generator2Used).hasValue(0))
 		            .expectNoEvent(Duration.ofMillis(400))
-		            .then(() -> assertThat(generator2Used.get()).isEqualTo(1))
+		            .then(() -> assertThat(generator2Used).hasValue(1))
 		            .expectNoEvent(Duration.ofMillis(800))
 		            .expectNext("foo")
 		            .verifyComplete();

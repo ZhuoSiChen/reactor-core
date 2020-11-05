@@ -16,25 +16,29 @@
 
 package reactor.core.publisher;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.testng.Assert;
 import reactor.core.Exceptions;
 import reactor.test.StepVerifier;
 import reactor.test.subscriber.AssertSubscriber;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 public class MonoFilterTest {
 
-	@Test(expected = NullPointerException.class)
+	@Test
 	public void sourceNull() {
-		new MonoFilter<Integer>(null, e -> true);
+		assertThatExceptionOfType(NullPointerException.class).isThrownBy(() -> {
+			new MonoFilter<Integer>(null, e -> true);
+		});
 	}
 
-	@Test(expected = NullPointerException.class)
+	@Test
 	public void predicateNull() {
-		Mono.never()
-		    .filter(null);
+		assertThatExceptionOfType(NullPointerException.class).isThrownBy(() -> {
+			Mono.never().filter(null);
+		});
 	}
 
 	@Test
@@ -159,7 +163,7 @@ public class MonoFilterTest {
 			up.onNext(3);
 		}
 		catch(Exception e){
-			Assert.assertTrue(Exceptions.isCancel(e));
+			assertThat(Exceptions.isCancel(e)).isTrue();
 		}
 
 		ts.assertValues(2)

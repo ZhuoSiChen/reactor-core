@@ -19,8 +19,7 @@ package reactor.core.publisher;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import java.util.function.Supplier;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import reactor.test.StepVerifier;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -112,16 +111,5 @@ public class MonoErrorSuppliedTest {
 				.withMessage("boom1");
 
 		assertThat(count).as("after call").hasValue(1);
-	}
-
-	@Test
-	public void supplierMethod() {
-		StepVerifier.create(Mono.error(illegalStateExceptionSupplier()))
-				.verifyErrorSatisfies(e -> assertThat(e).isInstanceOf(IllegalStateException.class)
-						.hasMessage("boom"));
-	}
-
-	private Supplier<IllegalStateException> illegalStateExceptionSupplier() {
-		return () -> new IllegalStateException("boom");
 	}
 }

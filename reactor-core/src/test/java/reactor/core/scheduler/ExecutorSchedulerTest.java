@@ -26,7 +26,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.jetbrains.annotations.NotNull;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import reactor.core.Exceptions;
 import reactor.core.Scannable;
 
@@ -124,7 +124,7 @@ public class ExecutorSchedulerTest extends AbstractSchedulerTest {
 				.as("third-no rejection")
 				.doesNotThrowAnyException();
 
-		assertThat(count.get()).isEqualTo(3);
+		assertThat(count).hasValue(3);
 	}
 
 	@Test
@@ -183,7 +183,7 @@ public class ExecutorSchedulerTest extends AbstractSchedulerTest {
 				.as("third-no rejection")
 				.doesNotThrowAnyException();
 
-		assertThat(count.get()).isEqualTo(3);
+		assertThat(count).hasValue(3);
 	}
 
 	@Test

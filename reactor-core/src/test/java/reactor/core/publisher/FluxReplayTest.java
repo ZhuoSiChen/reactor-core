@@ -24,9 +24,9 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 import org.assertj.core.api.Assertions;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.reactivestreams.Subscription;
 
 import reactor.core.CoreSubscriber;
@@ -45,6 +45,21 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 public class FluxReplayTest extends FluxOperatorTest<String, String> {
+
+	VirtualTimeScheduler vts;
+
+	@BeforeEach
+	public void vtsStart() {
+		//delayElements (notably) now uses parallel() so VTS must be enabled everywhere
+		vts = VirtualTimeScheduler.getOrSet();
+	}
+
+	@AfterEach
+	public void vtsStop() {
+		VirtualTimeScheduler.reset();
+	}
+
+	// === overrides to configure the abstract test ===
 
 	@Override
 	protected Scenario<String, String> defaultScenarioOptions(Scenario<String, String> defaultOptions) {
@@ -68,30 +83,22 @@ public class FluxReplayTest extends FluxOperatorTest<String, String> {
 		);
 	}
 
-	@Test(expected = IllegalArgumentException.class)
-	public void failPrefetch(){
-		Flux.never()
-		    .replay( -1);
+	// === start of tests ===
+
+	@Test
+	public void failPrefetch() {
+		assertThatExceptionOfType(IllegalArgumentException.class).isThrownBy(() -> {
+			Flux.never()
+					.replay(-1);
+		});
 	}
 
-	@Test(expected = IllegalArgumentException.class)
-	public void failTime(){
-		Flux.never()
-		    .replay( Duration.ofDays(-1));
-	}
-
-	VirtualTimeScheduler vts;
-
-	@Before
-	public void vtsStart() {
-		//delayElements (notably) now uses parallel() so VTS must be enabled everywhere
-		vts = VirtualTimeScheduler.getOrSet();
-	}
-
-	@After
-	public void vtsStop() {
-		vts = null;
-		VirtualTimeScheduler.reset();
+	@Test
+	public void failTime() {
+		assertThatExceptionOfType(IllegalArgumentException.class).isThrownBy(() -> {
+			Flux.never()
+					.replay(Duration.ofDays(-1));
+		});
 	}
 
 	@Test

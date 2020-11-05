@@ -19,13 +19,11 @@ package reactor.core.publisher;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.reactivestreams.Subscription;
 import reactor.core.CoreSubscriber;
 import reactor.core.Fuseable;
@@ -39,26 +37,34 @@ import reactor.util.Loggers;
 import reactor.util.context.Context;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 public class MonoCollectTest {
 
 	static final Logger LOGGER = Loggers.getLogger(MonoCollectListTest.class);
 
 
-	@Test(expected = NullPointerException.class)
+	@Test
 	public void nullSource() {
-		new MonoCollect<>(null, () -> 1, (a, b) -> {
+		assertThatExceptionOfType(NullPointerException.class).isThrownBy(() -> {
+			new MonoCollect<>(null, () -> 1, (a, b) -> {
+			});
 		});
 	}
 
-	@Test(expected = NullPointerException.class)
+	@Test
 	public void nullSupplier() {
-		Flux.never().collect(null, (a, b) -> {});
+		assertThatExceptionOfType(NullPointerException.class).isThrownBy(() -> {
+			Flux.never().collect(null, (a, b) -> {
+			});
+		});
 	}
 
-	@Test(expected = NullPointerException.class)
+	@Test
 	public void nullAction() {
-		Flux.never().collect(() -> 1, null);
+		assertThatExceptionOfType(NullPointerException.class).isThrownBy(() -> {
+			Flux.never().collect(() -> 1, null);
+		});
 	}
 
 	@Test
@@ -100,7 +106,7 @@ public class MonoCollectTest {
 
 		ts.assertNoValues()
 		  .assertError(RuntimeException.class)
-		  .assertErrorWith( e -> Assert.assertTrue(e.getMessage().contains("forced failure")))
+		  .assertErrorWith( e -> assertThat(e).hasMessageContaining("forced failure"))
 		  .assertNotComplete();
 
 	}
@@ -127,7 +133,7 @@ public class MonoCollectTest {
 
 		ts.assertNoValues()
 		  .assertError(RuntimeException.class)
-		  .assertErrorWith( e -> Assert.assertTrue(e.getMessage().contains("forced failure")))
+		  .assertErrorWith(e -> assertThat(e).hasMessageContaining("forced failure"))
 		  .assertNotComplete();
 	}
 
@@ -303,7 +309,7 @@ public class MonoCollectTest {
 			if (!extraneous.get()) {
 				LOGGER.info(""+subscriber.container);
 			}
-			assertThat(extraneous).as("released " + i).isTrue();
+			assertThat(extraneous).as("released %d", i).isTrue();
 		}
 		LOGGER.info("discarded twice or more: {}", doubleDiscardCounter.get());
 	}
@@ -330,7 +336,7 @@ public class MonoCollectTest {
 			RaceTestUtils.race(subscriber::cancel, subscriber::onComplete);
 
 			if (testSubscriber.values().isEmpty()) {
-				assertThat(resource).as("not completed and released " + i).isTrue();
+				assertThat(resource).as("not completed and released %d", i).isTrue();
 			}
 		}
 		LOGGER.info("discarded twice or more: {}", doubleDiscardCounter.get());

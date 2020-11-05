@@ -20,8 +20,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.reactivestreams.Subscription;
 import reactor.core.CoreSubscriber;
 import reactor.core.Scannable;
@@ -29,23 +28,30 @@ import reactor.test.StepVerifier;
 import reactor.test.subscriber.AssertSubscriber;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 public class FluxOnBackpressureDropTest {
 
-	@Test(expected = NullPointerException.class)
+	@Test
 	public void source1Null() {
-		new FluxOnBackpressureDrop<>(null);
-	}
-
-	@Test(expected = NullPointerException.class)
-	public void source2Null() {
-		new FluxOnBackpressureDrop<>(null, v -> {
+		assertThatExceptionOfType(NullPointerException.class).isThrownBy(() -> {
+			new FluxOnBackpressureDrop<>(null);
 		});
 	}
 
-	@Test(expected = NullPointerException.class)
+	@Test
+	public void source2Null() {
+		assertThatExceptionOfType(NullPointerException.class).isThrownBy(() -> {
+			new FluxOnBackpressureDrop<>(null, v -> {
+			});
+		});
+	}
+
+	@Test
 	public void onDropNull() {
-		Flux.never().onBackpressureDrop(null);
+		assertThatExceptionOfType(NullPointerException.class).isThrownBy(() -> {
+			Flux.never().onBackpressureDrop(null);
+		});
 	}
 
 	@Test
@@ -115,7 +121,7 @@ public class FluxOnBackpressureDropTest {
 		  .assertComplete()
 		  .assertNoError();
 
-		Assert.assertEquals(Arrays.asList(1, 4), drops);
+		assertThat(drops).containsExactly(1, 4);
 	}
 
 	@Test

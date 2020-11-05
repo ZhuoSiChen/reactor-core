@@ -20,10 +20,9 @@ import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 
-import org.junit.After;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import reactor.core.CoreSubscriber;
 import reactor.core.Scannable;
 import reactor.core.scheduler.Scheduler;
@@ -32,17 +31,18 @@ import reactor.test.StepVerifier;
 import reactor.test.subscriber.AssertSubscriber;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.fail;
 
 public class FluxIntervalTest {
 
 	Scheduler exec;
 
-	@Before
+	@BeforeEach
 	public void before() {
 		exec = Schedulers.newSingle("interval-test");
 	}
 
-	@After
+	@AfterEach
 	public void after() {
 		exec.dispose();
 	}
@@ -71,7 +71,7 @@ public class FluxIntervalTest {
 				long diff = list.get(i + 1) - list.get(i);
 
 				if (diff < 50 || diff > 150) {
-					Assert.fail("Period failure: " + diff);
+					fail("Period failure: " + diff);
 				}
 			}
 

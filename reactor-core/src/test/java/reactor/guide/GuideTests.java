@@ -36,11 +36,11 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import org.assertj.core.api.Assertions;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TestName;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscription;
 
@@ -60,7 +60,6 @@ import reactor.test.scheduler.VirtualTimeScheduler;
 import reactor.util.context.Context;
 import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
-import reactor.util.retry.Retry;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -72,7 +71,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 public class GuideTests {
 
-	@Test @SuppressWarnings("unchecked")
+	@Test
+	@SuppressWarnings("unchecked")
 	public void introFutureHell() {
 		CompletableFuture<List<String>> ids = ifhIds(); // <1>
 
@@ -158,7 +158,7 @@ public class GuideTests {
 	}
 
 	@Test
-	public void advancedComposedNow() {
+	public void advancedCompose() {
 		Function<Flux<String>, Flux<String>> filterAndMap =
 				f -> f.filter(color -> !color.equals("orange"))
 				      .map(String::toUpperCase);
@@ -170,7 +170,7 @@ public class GuideTests {
 	}
 
 	@Test
-	public void advancedComposedDefer() {
+	public void advancedTransform() {
 		AtomicInteger ai = new AtomicInteger();
 		Function<Flux<String>, Flux<String>> filterAndMap = f -> {
 			if (ai.incrementAndGet() == 1) {
@@ -184,7 +184,7 @@ public class GuideTests {
 		Flux<String> composedFlux =
 				Flux.fromIterable(Arrays.asList("blue", "green", "orange", "purple"))
 				    .doOnNext(System.out::println)
-				    .transformDeferred(filterAndMap);
+				    .compose(filterAndMap);
 
 		composedFlux.subscribe(d -> System.out.println("Subscriber 1 to Composed MapAndFilter :"+d));
 		composedFlux.subscribe(d -> System.out.println("Subscriber 2 to Composed MapAndFilter: "+d));
@@ -657,8 +657,7 @@ public class GuideTests {
 		Flux<String> flux =
 		Flux.<String>error(new IllegalArgumentException()) // <1>
 				.doOnError(System.out::println) // <2>
-				.retryWhen(Retry.from(companion -> // <3>
-						companion.take(3))); // <4>
+				.retryWhen(companion -> companion.take(3)); // <3>
 
 		StepVerifier.create(flux)
 	                .verifyComplete();
@@ -669,102 +668,38 @@ public class GuideTests {
 
 	@Test
 	public void errorHandlingRetryWhenEquatesRetry() {
-		AtomicInteger errorCount = new AtomicInteger();
 		Flux<String> flux =
-				Flux.<String>error(new IllegalArgumentException())
-						.doOnError(e -> errorCount.incrementAndGet())
-						.retryWhen(Retry.from(companion -> // <1>
-								companion.map(rs -> { // <2>
-									if (rs.totalRetries() < 3) return rs.totalRetries(); // <3>
-									else throw Exceptions.propagate(rs.failure()); // <4>
-								})
-						));
+		Flux.<String>error(new IllegalArgumentException())
+				.retryWhen(companion -> companion
+						.zipWith(Flux.range(1, 4), (error, index) -> { // <1>
+							if (index < 4) return index; // <2>
+							else throw Exceptions.propagate(error); // <3>
+						})
+				);
 
 		StepVerifier.create(flux)
 	                .verifyError(IllegalArgumentException.class);
 
-		AtomicInteger retryNErrorCount = new AtomicInteger();
-		StepVerifier.create(Flux.<String>error(new IllegalArgumentException()).doOnError(e -> retryNErrorCount.incrementAndGet()).retry(3))
+		StepVerifier.create(Flux.<String>error(new IllegalArgumentException()).retry(3))
 	                .verifyError();
-
-		assertThat(errorCount).hasValue(retryNErrorCount.get());
-	}
-
-	@Test
-	public void errorHandlingRetryBuilders() {
-		Throwable exception = new IllegalStateException("boom");
-		Flux<String> errorFlux = Flux.error(exception);
-
-		errorFlux.retryWhen(Retry.max(3))
-		         .as(StepVerifier::create)
-		         .verifyErrorSatisfies(e -> assertThat(e)
-				         .hasMessage("Retries exhausted: 3/3")
-				         .hasCause(exception));
-
-		errorFlux.retryWhen(Retry.max(3).filter(error -> error instanceof NullPointerException))
-		         .as(StepVerifier::create)
-		         .verifyErrorMessage("boom");
 	}
 
 	@Test
 	public void errorHandlingRetryWhenExponential() {
-		AtomicInteger errorCount = new AtomicInteger();
 		Flux<String> flux =
-				Flux.<String>error(new IllegalStateException("boom"))
-						.doOnError(e -> { // <1>
-							errorCount.incrementAndGet();
-							System.out.println(e + " at " + LocalTime.now());
+		Flux.<String>error(new IllegalArgumentException())
+				.retryWhen(companion -> companion
+						.doOnNext(s -> System.out.println(s + " at " + LocalTime.now())) // <1>
+						.zipWith(Flux.range(1, 4), (error, index) -> { // <2>
+							if (index < 4) return index;
+							else throw Exceptions.propagate(error);
 						})
-						.retryWhen(Retry
-								.backoff(3, Duration.ofMillis(100)).jitter(0d) // <2>
-								.doAfterRetry(rs -> System.out.println("retried at " + LocalTime.now())) // <3>
-								.onRetryExhaustedThrow((spec, rs) -> rs.failure()) // <4>
-						);
+						.flatMap(index -> Mono.delay(Duration.ofMillis(index * 100))) // <3>
+						.doOnNext(s -> System.out.println("retried at " + LocalTime.now())) // <4>
+				);
 
 		StepVerifier.create(flux)
-		            .verifyErrorSatisfies(e -> Assertions
-				            .assertThat(e)
-				            .isInstanceOf(IllegalStateException.class)
-				            .hasMessage("boom"));
-
-		assertThat(errorCount).hasValue(4);
-	}
-
-	@Test
-	public void errorHandlingRetryWhenTransient() {
-		AtomicInteger errorCount = new AtomicInteger(); // <1>
-		AtomicInteger transientHelper = new AtomicInteger();
-		Flux<Integer> transientFlux = Flux.<Integer>generate(sink -> {
-			int i = transientHelper.getAndIncrement();
-			if (i == 10) { // <2>
-				sink.next(i);
-				sink.complete();
-			}
-			else if (i % 3 == 0) { // <3>
-				sink.next(i);
-			}
-			else {
-				sink.error(new IllegalStateException("Transient error at " + i)); // <4>
-			}
-		})
-				.doOnError(e -> errorCount.incrementAndGet());
-
-transientFlux.retryWhen(Retry.max(2).transientErrors(true))  // <5>
-             .blockLast();
-assertThat(errorCount).hasValue(6); // <6>
-
-		transientHelper.set(0);
-		transientFlux.retryWhen(Retry.max(2).transientErrors(true))
-		             .as(StepVerifier::create)
-		             .expectNext(0, 3, 6, 9, 10)
-		             .verifyComplete();
-
-		transientHelper.set(0);
-		transientFlux.retryWhen(Retry.max(2))
-		             .as(StepVerifier::create)
-		             .expectNext(0, 3)
-		             .verifyErrorMessage("Retries exhausted: 2/2");
-
+		            .verifyError(IllegalArgumentException.class);
 	}
 
 	public String convert(int i) throws IOException {
@@ -997,6 +932,10 @@ assertThat(errorCount).hasValue(6); // <6>
 		probe.assertWasNotCancelled(); //<5>
 	}
 
+	//Note: the following static methods and fields are grouped here on purpose
+	//as they all relate to the same section of the reference guide (activating debug mode).
+	//some of these lines are copied verbatim in the reference guide, like the declaration of toDebug.
+
 	private Flux<String> urls() {
 		return Flux.range(1, 5)
 		           .map(i -> "https://www.mysite.io/quote" + i);
@@ -1011,17 +950,20 @@ assertThat(errorCount).hasValue(6); // <6>
 		           .single();
 	}
 
-	@Rule
-	public TestName testName = new TestName();
-
-	@Before
-	public void populateDebug() {
-		if (testName.getMethodName().equals("debuggingCommonStacktrace")) {
+	@BeforeEach
+	public void populateDebug(TestInfo testInfo) {
+		if (testInfo.getTags().contains("debugModeOn")) {
+			Hooks.onOperatorDebug();
+		}
+		if (testInfo.getTags().contains("debugInit")) {
 			toDebug = scatterAndGather(urls());
 		}
-		else if (testName.getMethodName().startsWith("debuggingActivated")) {
-			Hooks.onOperatorDebug();
-			toDebug = scatterAndGather(urls());
+	}
+
+	@AfterEach
+	public void removeHooks(TestInfo testInfo) {
+		if (testInfo.getTags().contains("debugModeOn")) {
+			Hooks.resetOnOperatorDebug();
 		}
 	}
 
@@ -1040,17 +982,20 @@ assertThat(errorCount).hasValue(6); // <6>
 				assertThat(withSuppressed.getSuppressed()).hasSize(1);
 				assertThat(withSuppressed.getSuppressed()[0])
 						.hasMessageStartingWith("\nAssembly trace from producer [reactor.core.publisher.MonoSingle] :")
-						.hasMessageContaining("Flux.single ⇢ at reactor.guide.GuideTests.scatterAndGather(GuideTests.java:1011)\n");
+						.hasMessageEndingWith("Flux.single ⇢ reactor.guide.GuideTests.scatterAndGather(GuideTests.java:950)\n");
 			});
 		}
 	}
 
 	@Test
+	@Tag("debugInit")
 	public void debuggingCommonStacktrace() {
 		toDebug.subscribe(System.out::println, t -> printAndAssert(t, false));
 	}
 
 	@Test
+	@Tag("debugModeOn")
+	@Tag("debugInit")
 	public void debuggingActivated() {
 		toDebug.subscribe(System.out::println, t -> printAndAssert(t, true));
 	}

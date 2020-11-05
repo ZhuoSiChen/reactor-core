@@ -20,8 +20,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
-import org.assertj.core.util.Arrays;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import reactor.core.Exceptions;
 import reactor.test.StepVerifier;
@@ -62,7 +61,7 @@ public class OnNextFailureStrategyTest {
 
 		assertThat(t).isNull();
 		assertThat(error.get()).isInstanceOf(NullPointerException.class).hasMessage("foo");
-		assertThat(value.get()).isEqualTo("foo");
+		assertThat(value).hasValue("foo");
 	}
 
 	@Test
@@ -105,7 +104,7 @@ public class OnNextFailureStrategyTest {
 
 		assertThat(t).isNull();
 		assertThat(error.get()).isInstanceOf(NullPointerException.class).hasMessage("foo");
-		assertThat(value.get()).isEqualTo("foo");
+		assertThat(value).hasValue("foo");
 	}
 
 	@Test
@@ -151,7 +150,7 @@ public class OnNextFailureStrategyTest {
 		assertThat(error.get())
 				.isInstanceOf(NoSuchMethodError.class)
 				.hasMessage("foo");
-		assertThat(value.get()).isEqualTo("foo");
+		assertThat(value).hasValue("foo");
 	}
 
 	@Test
@@ -240,7 +239,7 @@ public class OnNextFailureStrategyTest {
 				.hasMessage("error hook")
 				.hasSuppressedException(exception);
 
-		assertThat(value.get()).isEqualTo("foo");
+		assertThat(value).hasValue("foo");
 	}
 
 	@Test
@@ -260,7 +259,7 @@ public class OnNextFailureStrategyTest {
 		assertThat(t)
 				.isSameAs(exception)
 				.hasNoSuppressedExceptions();
-		assertThat(value.get()).isEqualTo("foo");
+		assertThat(value).hasValue("foo");
 	}
 
 
@@ -283,7 +282,7 @@ public class OnNextFailureStrategyTest {
 
 		assertThat(t).isNull();
 		assertThat(error.get()).isInstanceOf(NullPointerException.class).hasMessage("foo");
-		assertThat(value.get()).isEqualTo("foo");
+		assertThat(value).hasValue("foo");
 	}
 
 	@Test
@@ -329,7 +328,7 @@ public class OnNextFailureStrategyTest {
 		assertThat(t).isSameAs(failureError)
 		             .hasSuppressedException(exception);
 
-		assertThat(value.get()).isEqualTo("foo");
+		assertThat(value).hasValue("foo");
 	}
 
 	@Test
@@ -352,7 +351,7 @@ public class OnNextFailureStrategyTest {
 
 		assertThat(t).isNull();
 		assertThat(error.get()).isInstanceOf(NullPointerException.class).hasMessage("foo");
-		assertThat(value.get()).isEqualTo("foo");
+		assertThat(value).hasValue("foo");
 	}
 
 	@Test
@@ -402,7 +401,7 @@ public class OnNextFailureStrategyTest {
 		assertThat(error.get())
 				.isInstanceOf(NoSuchMethodError.class)
 				.hasMessage("foo");
-		assertThat(value.get()).isEqualTo("foo");
+		assertThat(value).hasValue("foo");
 	}
 
 	@Test
@@ -450,7 +449,7 @@ public class OnNextFailureStrategyTest {
 		assertThat(t).isSameAs(failureError)
 		             .hasSuppressedException(exception);
 
-		assertThat(value.get()).isEqualTo("foo");
+		assertThat(value).hasValue("foo");
 	}
 
 	@Test

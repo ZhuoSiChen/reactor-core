@@ -21,7 +21,7 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscription;
 import reactor.core.CoreSubscriber;
@@ -133,10 +133,13 @@ public class FluxCombineLatestTest extends FluxOperatorTest<String, String> {
 	public void singleSourceIsMapped() {
 
 		AssertSubscriber<String> ts = AssertSubscriber.create();
-
-		Flux.combineLatest(a -> a[0].toString(), Flux.just(1))
-		    .subscribe(ts);
-
+		Publisher<Integer>[] arr = new Publisher[2];
+//		Flux.combineLatest(arr,)
+		Flux.combineLatest(a -> a[0].toString(), Flux.just(1));
+//		    .subscribe(ts);
+		StepVerifier.create(Flux.combineLatest(a -> a[0].toString(), Flux.just(1)))
+				.expectNext("1")
+				.verifyComplete();
 		ts.assertValues("1")
 		  .assertNoError()
 		  .assertComplete();
@@ -157,6 +160,7 @@ public class FluxCombineLatestTest extends FluxOperatorTest<String, String> {
 
 	@Test
 	public void fused() {
+		//直接处理器,在此线程直接下发元素
 		DirectProcessor<Integer> dp1 = DirectProcessor.create();
 		DirectProcessor<Integer> dp2 = DirectProcessor.create();
 
@@ -181,6 +185,11 @@ public class FluxCombineLatestTest extends FluxOperatorTest<String, String> {
 		ts.assertFuseableSource()
 		  .assertFusionMode(Fuseable.ASYNC)
 		  .assertValues(12, 22, 32, 33);
+		StepVerifier
+			.create(Flux.combineLatest(dp1, dp2, (a, b) -> a + b))
+			.expectNext(12,22,32,33)
+			.verifyComplete();
+
 	}
 
 	@Test
@@ -266,11 +275,14 @@ public class FluxCombineLatestTest extends FluxOperatorTest<String, String> {
 
 	@Test
 	public void scanMain() {
+		//new 了个订阅者
 		CoreSubscriber<Integer> actual = new LambdaSubscriber<>(null, e -> {}, null, null);
-
+		//把这个订阅者 交给 subscription
 		FluxCombineLatest.CombineLatestCoordinator<String, Integer> test = new FluxCombineLatest.CombineLatestCoordinator<>(
 				actual, arr -> { throw new IllegalStateException("boomArray");}, 123, Queues.<FluxCombineLatest.SourceAndArray>one().get(), 456);
+		//订阅者需要两个元素
 		test.request(2L);
+		//scan方法是观察 subscription的内部状态的
 		test.error = new IllegalStateException("boom"); //most straightforward way to set it as otherwise it is drained
 
 		assertThat(test.scan(Scannable.Attr.REQUESTED_FROM_DOWNSTREAM)).isEqualTo(2L);

@@ -21,7 +21,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import reactor.core.Fuseable;
 import reactor.test.StepVerifier;
 import reactor.test.publisher.FluxOperatorTest;
@@ -77,7 +77,7 @@ public class FluxIndexTest extends FluxOperatorTest<Integer, Tuple2<Long, Intege
 		            .expectComplete()
 		            .verify();
 
-		assertThat(counter.get()).isEqualTo(1000);
+		assertThat(counter).hasValue(1000);
 	}
 
 	@Test
@@ -102,7 +102,7 @@ public class FluxIndexTest extends FluxOperatorTest<Integer, Tuple2<Long, Intege
 				            it -> counter.incrementAndGet())
 		            .verifyComplete();
 
-		assertThat(counter.get()).isEqualTo(1000);
+		assertThat(counter).hasValue(1000);
 	}
 
 	@Test
@@ -122,7 +122,7 @@ public class FluxIndexTest extends FluxOperatorTest<Integer, Tuple2<Long, Intege
 		            .expectComplete()
 		            .verify();
 
-		assertThat(counter.get()).isEqualTo(1000);
+		assertThat(counter).hasValue(1000);
 	}
 
 	@Test
@@ -141,7 +141,7 @@ public class FluxIndexTest extends FluxOperatorTest<Integer, Tuple2<Long, Intege
 		            .expectComplete()
 		            .verify();
 
-		assertThat(counter.get()).isEqualTo(1000);
+		assertThat(counter).hasValue(1000);
 	}
 
 	@Test
@@ -166,7 +166,7 @@ public class FluxIndexTest extends FluxOperatorTest<Integer, Tuple2<Long, Intege
 				            it -> counter.incrementAndGet())
 		            .verifyComplete();
 
-		assertThat(counter.get()).isEqualTo(1000);
+		assertThat(counter).hasValue(1000);
 	}
 
 	@Test
@@ -186,7 +186,7 @@ public class FluxIndexTest extends FluxOperatorTest<Integer, Tuple2<Long, Intege
 		            .expectComplete()
 		            .verify();
 
-		assertThat(counter.get()).isEqualTo(1000);
+		assertThat(counter).hasValue(1000);
 	}
 
 	@Test

@@ -446,7 +446,7 @@ public abstract class Operators {
 
 	/**
 	 * Invoke a (local or global) hook that processes elements that get discarded
-	 * en masse after having been enqueued, due to cancellation or error. This method
+	 * en masses after having been enqueued, due to cancellation or error. This method
 	 * also empties the {@link Queue} (either by repeated {@link Queue#poll()} calls if
 	 * a hook is defined, or by {@link Queue#clear()} as a shortcut if no hook is defined).
 	 *

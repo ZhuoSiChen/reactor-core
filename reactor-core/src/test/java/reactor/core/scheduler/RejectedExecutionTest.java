@@ -23,11 +23,10 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TestName;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscription;
 import reactor.core.Disposable;
@@ -40,13 +39,10 @@ import reactor.core.publisher.SignalType;
 import reactor.test.StepVerifier;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
 
 public class RejectedExecutionTest {
 
-	@Rule
-	public TestName testName = new TestName();
+	private TestInfo testInfo;
 
 	private BoundedScheduler scheduler;
 
@@ -58,7 +54,11 @@ public class RejectedExecutionTest {
 	private ConcurrentLinkedQueue<Long> onOperatorErrorData = new ConcurrentLinkedQueue<>();
 	private ConcurrentLinkedQueue<Throwable> onSchedulerHandleError = new ConcurrentLinkedQueue<>();
 
-	@Before
+	public RejectedExecutionTest(TestInfo testInfo) {
+		this.testInfo = testInfo;
+	}
+
+	@BeforeEach
 	public void setUp() {
 		scheduler = new BoundedScheduler(Schedulers.newSingle("bounded-single"));
 		Hooks.onNextDropped(o -> onNextDropped.add(o));
@@ -75,7 +75,7 @@ public class RejectedExecutionTest {
 		Schedulers.onHandleError((thread, t) -> onSchedulerHandleError.add(t));
 	}
 
-	@After
+	@AfterEach
 	public void tearDown() {
 		scheduler.dispose();
 		onNexts.clear();
@@ -293,7 +293,7 @@ public class RejectedExecutionTest {
 						"Data dropped from onOperatorError should always be >= 1");
 
 		if (!onOperatorErrorData.isEmpty()) {
-			System.out.println(testName.getMethodName() + " legitimately has data dropped from onOperatorError: " + onOperatorErrorData);
+			System.out.println(testInfo.getDisplayName() + " legitimately has data dropped from onOperatorError: " + onOperatorErrorData);
 		}
 	}
 
@@ -327,21 +327,21 @@ public class RejectedExecutionTest {
 						"Data dropped from onOperatorError should always be >= elementCount");
 
 		if (!onOperatorErrorData.isEmpty()) {
-			System.out.println(testName.getMethodName() + " legitimately has data dropped from onOperatorError: " + onOperatorErrorData);
+			System.out.println(testInfo.getDisplayName() + " legitimately has data dropped from onOperatorError: " + onOperatorErrorData);
 		}
 
 	}
 
 	private void onNext(long i) {
 		String thread = Thread.currentThread().getName();
-		assertTrue("onNext on the wrong thread " + thread, thread.contains("bounded"));
+		assertThat(thread).as("onNext on the wrong thread %s", thread).contains("bounded");
 		onNexts.add(i);
 	}
 
 	private void onError(Throwable t) {
 		String thread = Thread.currentThread().getName();
 		//FIXME evaluate if and when it is legit to be on different thread
-		assertFalse("onError on the wrong thread " + thread, thread.contains("bounded"));
+		assertThat(thread).as("onError on the wrong thread %s", thread).doesNotContain("bounded");
 		onErrors.add(t);
 	}
 

@@ -16,27 +16,29 @@
 
 package reactor.core.publisher;
 
-import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import reactor.test.StepVerifier;
 import reactor.test.subscriber.AssertSubscriber;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 public class FluxRetryTest {
 
-	@Test(expected = NullPointerException.class)
+	@Test
 	public void sourceNull() {
-		new FluxRetry<>(null, 1);
+		assertThatExceptionOfType(NullPointerException.class).isThrownBy(() -> {
+			new FluxRetry<>(null, 1);
+		});
 	}
 
-	@Test(expected = IllegalArgumentException.class)
+	@Test
 	public void timesInvalid() {
-		Flux.never()
-		    .retry(-1);
+		assertThatExceptionOfType(IllegalArgumentException.class).isThrownBy(() -> {
+			Flux.never().retry(-1);
+		});
 	}
 
 	@Test
@@ -139,28 +141,5 @@ public class FluxRetryTest {
 		    .retry(2)
 		    .subscribeWith(AssertSubscriber.create())
 		    .assertValues(1);
-	}
-
-	@Test
-	public void onLastAssemblyOnce() {
-		AtomicInteger onAssemblyCounter = new AtomicInteger();
-		String hookKey = UUID.randomUUID().toString();
-		try {
-			Hooks.onLastOperator(hookKey, publisher -> {
-				onAssemblyCounter.incrementAndGet();
-				return publisher;
-			});
-			Mono.error(new IllegalStateException("boom"))
-			    .retry(1)
-			    .block();
-		}
-		catch (IllegalStateException ignored) {
-			// ignore
-		}
-		finally {
-			Hooks.resetOnLastOperator(hookKey);
-		}
-
-		assertThat(onAssemblyCounter).hasValue(1);
 	}
 }

@@ -37,7 +37,7 @@ import reactor.util.context.Context;
 
 /**
  * Combines the latest values from multiple sources through a function.
- *
+ *  从多个源中合并最新的value
  * @param <T> the value type of the sources
  * @param <R> the result type
  *
@@ -128,6 +128,7 @@ final class FluxCombineLatest<T, R> extends Flux<R> implements Fuseable, SourceP
 				Publisher<? extends T> p;
 
 				try {
+					//从上游拿到元素
 					p = Objects.requireNonNull(it.next(),
 							"The Publisher returned by the iterator is null");
 				}
@@ -136,12 +137,12 @@ final class FluxCombineLatest<T, R> extends Flux<R> implements Fuseable, SourceP
 							actual.currentContext()));
 					return;
 				}
-
+				//当本地数据装不下时 扩容
 				if (n == a.length) {
 					Publisher<? extends T>[] c = new Publisher[n + (n >> 2)];
 					System.arraycopy(a, 0, c, 0, n);
 					a = c;
-				}
+				}//存放元素
 				a[n++] = p;
 			}
 
@@ -149,11 +150,12 @@ final class FluxCombineLatest<T, R> extends Flux<R> implements Fuseable, SourceP
 		else {
 			n = a.length;
 		}
-
+		//当 n==0说明这个源为空
 		if (n == 0) {
 			Operators.complete(actual);
 			return;
 		}
+		// 当只有一个源时 走回 from 和 FluxMapFuseable 和 FluxMap 方法
 		if (n == 1) {
 			Function<T, R> f = t -> combiner.apply(new Object[]{t});
 			if (a[0] instanceof Fuseable) {
@@ -167,12 +169,12 @@ final class FluxCombineLatest<T, R> extends Flux<R> implements Fuseable, SourceP
 		}
 
 		Queue<SourceAndArray> queue = queueSupplier.get();
-
+		// new 一个 subscription
 		CombineLatestCoordinator<T, R> coordinator =
 				new CombineLatestCoordinator<>(actual, combiner, n, queue, prefetch);
-
+		//响应式编程的publish.onSubscribe(subscription)将 subscription 传递给下游
 		actual.onSubscribe(coordinator);
-
+		//这里应该是向多个源发起订阅
 		coordinator.subscribe(a, n);
 	}
 
@@ -231,6 +233,7 @@ final class FluxCombineLatest<T, R> extends Flux<R> implements Fuseable, SourceP
 			this.combiner = combiner;
 			@SuppressWarnings("unchecked") CombineLatestInner<T>[] a =
 					new CombineLatestInner[n];
+			//把每个 subscriber 对应一个 subscription
 			for (int i = 0; i < n; i++) {
 				a[i] = new CombineLatestInner<>(this, i, prefetch);
 			}
@@ -412,7 +415,7 @@ final class FluxCombineLatest<T, R> extends Flux<R> implements Fuseable, SourceP
 			int missed = 1;
 
 			for (; ; ) {
-
+				//需要 n 个  request=n
 				long r = requested;
 				long e = 0L;
 
@@ -447,9 +450,9 @@ final class FluxCombineLatest<T, R> extends Flux<R> implements Fuseable, SourceP
 						actual.onError(ex);
 						return;
 					}
-
+					//下发元素
 					actual.onNext(w);
-
+					//再调用
 					v.source.requestOne();
 
 					e++;
@@ -487,7 +490,9 @@ final class FluxCombineLatest<T, R> extends Flux<R> implements Fuseable, SourceP
 
 		boolean checkTerminated(boolean d, boolean empty, Queue<SourceAndArray> q) {
 			if (cancelled) {
+				//取消所有源的订阅
 				cancelAll();
+				//销毁
 				discardQueue(q);
 				return true;
 			}

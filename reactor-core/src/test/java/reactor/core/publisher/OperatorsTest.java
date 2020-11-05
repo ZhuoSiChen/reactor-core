@@ -37,7 +37,7 @@ import java.util.stream.Stream;
 import javax.annotation.Nullable;
 
 import org.assertj.core.api.Assertions;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscription;
@@ -354,7 +354,7 @@ public class OperatorsTest {
 
 		Operators.onNextDropped("foo", c);
 
-		assertThat(hookState.get()).isEqualTo("foo");
+		assertThat(hookState).hasValue("foo");
 	}
 
 	@Test

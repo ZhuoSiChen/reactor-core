@@ -23,26 +23,31 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import reactor.test.StepVerifier;
 import reactor.test.subscriber.AssertSubscriber;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 public class FluxStreamTest {
 
 	final List<Integer> source = Arrays.asList(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
 
 	@SuppressWarnings("ConstantConditions")
-	@Test(expected = NullPointerException.class)
+	@Test
 	public void nullStream() {
-		Flux.fromStream((Stream<?>) null);
+		assertThatExceptionOfType(NullPointerException.class).isThrownBy(() -> {
+			Flux.fromStream((Stream<?>) null);
+		});
 	}
 
 	@SuppressWarnings("ConstantConditions")
-	@Test(expected = NullPointerException.class)
+	@Test
 	public void nullSupplier() {
-		Flux.fromStream((Supplier<Stream<?>>) null);
+		assertThatExceptionOfType(NullPointerException.class).isThrownBy(() -> {
+			Flux.fromStream((Supplier<Stream<?>>) null);
+		});
 	}
 
 	@Test
@@ -168,7 +173,7 @@ public class FluxStreamTest {
 		            .thenCancel()
 		            .verify();
 
-		assertThat(closed.get()).isEqualTo(1);
+		assertThat(closed).hasValue(1);
 	}
 
 	@Test
@@ -182,7 +187,7 @@ public class FluxStreamTest {
 		            .thenCancel()
 		            .verify();
 
-		assertThat(closed.get()).isEqualTo(1);
+		assertThat(closed).hasValue(1);
 	}
 
 	@Test
@@ -195,7 +200,7 @@ public class FluxStreamTest {
 		            .expectNext("foo", "bar", "baz")
 		            .verifyComplete();
 
-		assertThat(closed.get()).isEqualTo(1);
+		assertThat(closed).hasValue(1);
 	}
 
 	@Test
@@ -208,7 +213,7 @@ public class FluxStreamTest {
 		            .expectNext("foo", "bar", "baz")
 		            .verifyComplete();
 
-		assertThat(closed.get()).isEqualTo(1);
+		assertThat(closed).hasValue(1);
 	}
 
 	@Test
@@ -222,7 +227,7 @@ public class FluxStreamTest {
 		            .expectNext("foo", "bar", "baz")
 		            .verifyErrorMessage("boom");
 
-		assertThat(closed.get()).isEqualTo(1);
+		assertThat(closed).hasValue(1);
 	}
 
 	@Test
@@ -237,7 +242,7 @@ public class FluxStreamTest {
 		            .expectNext("foo", "bar", "baz")
 		            .verifyErrorMessage("boom");
 
-		assertThat(closed.get()).isEqualTo(1);
+		assertThat(closed).hasValue(1);
 	}
 
 	@Test
@@ -250,7 +255,7 @@ public class FluxStreamTest {
 		            .expectNext("foo", "bar")
 		            .verifyErrorMessage("The iterator returned a null value");
 
-		assertThat(closed.get()).isEqualTo(1);
+		assertThat(closed).hasValue(1);
 	}
 
 	@Test
@@ -263,7 +268,7 @@ public class FluxStreamTest {
 		            .expectNext("foo", "bar")
 		            .verifyErrorMessage("The iterator returned a null value");
 
-		assertThat(closed.get()).isEqualTo(1);
+		assertThat(closed).hasValue(1);
 	}
 
 	@Test
@@ -277,7 +282,7 @@ public class FluxStreamTest {
 		            .expectNext("foo", "bar")
 		            .verifyComplete();
 
-		assertThat(closed.get()).isEqualTo(1);
+		assertThat(closed).hasValue(1);
 	}
 
 	@Test
@@ -304,7 +309,7 @@ public class FluxStreamTest {
 		            .thenCancel()
 		            .verify();
 
-		assertThat(closed.get()).isEqualTo(1);
+		assertThat(closed).hasValue(1);
 	}
 
 	@Test
@@ -319,7 +324,7 @@ public class FluxStreamTest {
 		            .thenCancel()
 		            .verify();
 
-		assertThat(closed.get()).isEqualTo(1);
+		assertThat(closed).hasValue(1);
 	}
 
 	@Test
@@ -332,7 +337,7 @@ public class FluxStreamTest {
 		            .expectNext("foo", "bar", "baz")
 		            .verifyComplete();
 
-		assertThat(closed.get()).isEqualTo(1);
+		assertThat(closed).hasValue(1);
 	}
 
 	@Test
@@ -345,7 +350,7 @@ public class FluxStreamTest {
 		            .expectNext("foo", "bar", "baz")
 		            .verifyComplete();
 
-		assertThat(closed.get()).isEqualTo(1);
+		assertThat(closed).hasValue(1);
 	}
 
 	@Test
@@ -360,7 +365,7 @@ public class FluxStreamTest {
 		            .expectNext("foo", "bar", "baz")
 		            .verifyErrorMessage("boom");
 
-		assertThat(closed.get()).isEqualTo(1);
+		assertThat(closed).hasValue(1);
 	}
 
 	@Test
@@ -375,7 +380,7 @@ public class FluxStreamTest {
 		            .expectNext("foo", "bar", "baz")
 		            .verifyErrorMessage("boom");
 
-		assertThat(closed.get()).isEqualTo(1);
+		assertThat(closed).hasValue(1);
 	}
 
 	@Test
@@ -388,7 +393,7 @@ public class FluxStreamTest {
 		            .expectNext("foo", "bar")
 		            .verifyErrorMessage("The iterator returned a null value");
 
-		assertThat(closed.get()).isEqualTo(1);
+		assertThat(closed).hasValue(1);
 	}
 
 	@Test
@@ -401,7 +406,7 @@ public class FluxStreamTest {
 		            .expectNext("foo", "bar")
 		            .verifyErrorMessage("The iterator returned a null value");
 
-		assertThat(closed.get()).isEqualTo(1);
+		assertThat(closed).hasValue(1);
 	}
 
 	@Test
@@ -417,7 +422,7 @@ public class FluxStreamTest {
 		            .expectNext("foo", "bar")
 		            .verifyComplete();
 
-		assertThat(closed.get()).isEqualTo(1);
+		assertThat(closed).hasValue(1);
 	}
 
 	@Test
@@ -441,11 +446,11 @@ public class FluxStreamTest {
 		StepVerifier.create(Flux.fromStream(source), 1)
 		            .expectNext("foo")
 		            .then(source::close)
-		            .then(() -> assertThat(closed.get()).isEqualTo(1))
+		            .then(() -> assertThat(closed).hasValue(1))
 		            .thenRequest(1)
 		            .expectNext("bar") //still working on the iterator
 		            .verifyComplete();
 
-		assertThat(closed.get()).isEqualTo(1); //no double close
+		assertThat(closed).hasValue(1); //no double close
 	}
 }

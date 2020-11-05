@@ -18,8 +18,7 @@ package reactor.core.publisher;
 import java.util.NoSuchElementException;
 import java.util.concurrent.atomic.AtomicReference;
 
-import org.junit.Test;
-
+import org.junit.jupiter.api.Test;
 import reactor.test.StepVerifier;
 import reactor.test.StepVerifierOptions;
 import reactor.util.context.Context;
@@ -88,7 +87,7 @@ public class ContextTests {
 		    .log()
 		    .subscribe();
 
-		assertThat(innerC.get()).isEqualTo("foobar");
+		assertThat(innerC).hasValue("foobar");
 	}
 
 	@Test

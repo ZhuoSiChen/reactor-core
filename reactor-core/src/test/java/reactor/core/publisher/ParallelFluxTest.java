@@ -35,9 +35,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.LongAdder;
 
 import org.assertj.core.api.Assertions;
-import org.junit.Assert;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
@@ -47,7 +46,7 @@ import reactor.core.CoreSubscriber;
 import reactor.core.Disposable;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
-import reactor.test.AutoDisposingRule;
+import reactor.test.AutoDisposingExtension;
 import reactor.test.StepVerifier;
 import reactor.test.publisher.TestPublisher;
 import reactor.test.subscriber.AssertSubscriber;
@@ -55,12 +54,12 @@ import reactor.util.concurrent.Queues;
 import reactor.util.context.Context;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.assertTrue;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 public class ParallelFluxTest {
 
-	@Rule
-	public AutoDisposingRule afterTest = new AutoDisposingRule();
+	@RegisterExtension
+	public AutoDisposingExtension afterTest = new AutoDisposingExtension();
 
 	@Test
 	public void sequentialMode() {
@@ -284,7 +283,7 @@ public class ParallelFluxTest {
 		flux.subscribe(v -> {
 		}, e -> latch.countDown(), latch::countDown);
 
-		assertTrue(latch.await(2, TimeUnit.SECONDS));
+		assertThat(latch.await(2, TimeUnit.SECONDS)).isTrue();
 
 		assertThat(signals.size()).isEqualTo(5);
 		assertThat(signals.get(0).get())
@@ -293,15 +292,12 @@ public class ParallelFluxTest {
 		assertThat(signals.get(1).get())
 				.as("second onNext signal isn't last value")
 				.isEqualTo(2);
-		assertTrue("onComplete for rail 1 expected",
-				signals.get(2)
-				       .isOnComplete());
-		assertTrue("onComplete for rail 2 expected",
-				signals.get(3)
-				       .isOnComplete());
-		assertTrue("onComplete for rail 3 expected",
-				signals.get(4)
-				       .isOnComplete());
+		assertThat(signals.get(2)
+				       .isOnComplete()).as("onComplete for rail 1 expected").isTrue();
+		assertThat(signals.get(3)
+				       .isOnComplete()).as("onComplete for rail 2 expected").isTrue();
+		assertThat(signals.get(4)
+				       .isOnComplete()).as("onComplete for rail 3 expected").isTrue();
 		assertThat(values.get(0)).as("1st onNext value unexpected").isEqualTo(1);
 		assertThat(values.get(1)).as("2nd onNext value unexpected").isEqualTo(2);
 	}
@@ -318,26 +314,26 @@ public class ParallelFluxTest {
 		flux.subscribe(v -> {
 		}, e -> latch.countDown(), latch::countDown);
 
-		assertTrue(latch.await(2, TimeUnit.SECONDS));
+		assertThat(latch.await(2, TimeUnit.SECONDS)).isTrue();
 
 		assertThat(signals).hasSize(2);
-		assertTrue("rail 1 onError expected",
-				signals.get(0)
-				       .isOnError());
-		assertTrue("rail 2 onError expected",
-				signals.get(1)
-				       .isOnError());
+		assertThat(signals.get(0)
+				       .isOnError()).as("rail 1 onError expected").isTrue();
+		assertThat(signals.get(1)
+				       .isOnError()).as("rail 2 onError expected").isTrue();
 		assertThat(signals.get(0).getThrowable()).as("plain exception rail 1 expected")
 				.hasMessage("boom");
 		assertThat(signals.get(1).getThrowable()).as("plain exception rail 2 expected")
 				.hasMessage("boom");
 	}
 
-	@Test(expected = NullPointerException.class)
+	@Test
 	public void testDoOnEachSignalNullConsumer() {
-		Flux.just(1)
-		    .parallel()
-		    .doOnEach(null);
+		assertThatExceptionOfType(NullPointerException.class).isThrownBy(() -> {
+			Flux.just(1)
+					.parallel()
+					.doOnEach(null);
+		});
 	}
 
 	@Test
@@ -950,8 +946,8 @@ public class ParallelFluxTest {
 
 		latch.await();
 
-		Assert.assertEquals("Multithreaded count", 3, count.get());
-		Assert.assertEquals("Multithreaded threads", 3, threadNames.size());
+		assertThat(count.get()).as("Multithreaded count").isEqualTo(3);
+		assertThat(threadNames).as("Multithreaded threads").hasSize(3);
 	}
 
 	@Test

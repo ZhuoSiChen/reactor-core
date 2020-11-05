@@ -21,9 +21,7 @@ import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.junit.Assert;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.reactivestreams.Subscription;
 
 import reactor.core.CoreSubscriber;
@@ -32,7 +30,6 @@ import reactor.core.Disposables;
 import reactor.core.Scannable;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
-import reactor.test.AutoDisposingRule;
 import reactor.test.StepVerifier;
 import reactor.test.subscriber.AssertSubscriber;
 import reactor.test.util.RaceTestUtils;
@@ -40,9 +37,6 @@ import reactor.test.util.RaceTestUtils;
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class MonoSubscribeOnTest {
-
-	@Rule
-	public AutoDisposingRule afterTest = new AutoDisposingRule();
 	
 	/*@Test
 	public void constructors() {
@@ -175,7 +169,7 @@ public class MonoSubscribeOnTest {
 		})
 		    .timeout(Duration.ofMillis(100L))
 		    .onErrorResume(t -> Mono.fromCallable(() -> 1))
-		    .subscribeOn(afterTest.autoDispose(Schedulers.newBoundedElastic(4, 100, "timeout")))
+		    .subscribeOn(Schedulers.newElastic("timeout"))
 		    .subscribe(ts);
 
 		ts.request(1);
@@ -194,12 +188,12 @@ public class MonoSubscribeOnTest {
 		Mono<Integer> p = Mono.fromCallable(count::incrementAndGet)
 		                      .subscribeOn(Schedulers.fromExecutorService(ForkJoinPool.commonPool()));
 
-		Assert.assertEquals(0, count.get());
+		assertThat(count).hasValue(0);
 
 		p.subscribeWith(AssertSubscriber.create())
 		 .await();
 
-		Assert.assertEquals(1, count.get());
+		assertThat(count).hasValue(1);
 	}
 
 	@Test
@@ -271,7 +265,7 @@ public class MonoSubscribeOnTest {
 				new MonoSubscribeOn.SubscribeOnSubscriber<>(ignoredSubscribe -> {}, null, countingWorker);
 		for (int i = 1; i <= 10_000; i++) {
 			RaceTestUtils.race(sosub::cancel, () -> sosub.onSubscribe(Operators.emptySubscription()));
-			assertThat(disposeCount).as("idle/disposed in round " + i).hasValue(i);
+			assertThat(disposeCount).as("idle/disposed in round %d", i).hasValue(i);
 
 			//reset
 			sosub.s = null;

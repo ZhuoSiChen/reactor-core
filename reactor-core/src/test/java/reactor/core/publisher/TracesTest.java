@@ -32,7 +32,7 @@
 
 package reactor.core.publisher;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -44,7 +44,7 @@ public class TracesTest {
 				"\treactor.core.ScannableTest.operatorChainWithDebugMode(ScannableTest.java:542)\n";
 
 		assertThat(Traces.extractOperatorAssemblyInformation(stack))
-				.isEqualTo("Flux.filter ⇢ at reactor.core.ScannableTest.operatorChainWithDebugMode(ScannableTest.java:542)");
+				.isEqualTo("Flux.filter ⇢ reactor.core.ScannableTest.operatorChainWithDebugMode(ScannableTest.java:542)");
 	}
 
 	@Test
@@ -66,7 +66,7 @@ public class TracesTest {
 				+ "\treactor.core.ScannableTest.operatorChainWithDebugMode(ScannableTest.java:543)";
 
 		assertThat(Traces.extractOperatorAssemblyInformation(stack))
-				.isEqualTo("Flux.delayElements ⇢ at reactor.core.ScannableTest.operatorChainWithDebugMode(ScannableTest.java:543)");
+				.isEqualTo("Flux.delayElements ⇢ reactor.core.ScannableTest.operatorChainWithDebugMode(ScannableTest.java:543)");
 	}
 
 	@Test
@@ -87,7 +87,7 @@ public class TracesTest {
 				+ "\treactor.core.ScannableTest.operatorChainWithDebugMode(ScannableTest.java:543)";
 
 		assertThat(Traces.extractOperatorAssemblyInformation(stack))
-				.isEqualTo("Flux.delayUntil ⇢ at reactor.core.publisher.FluxTest.delayElements(FluxTest.java:22)");
+				.isEqualTo("Flux.delayUntil ⇢ reactor.core.publisher.FluxTest.delayElements(FluxTest.java:22)");
 	}
 
 	@Test
@@ -147,7 +147,25 @@ public class TracesTest {
 				+ "\treactor.foo.Bar.baz3(Bar.java:789)\n";
 
 		assertThat(Traces.extractOperatorAssemblyInformation(stack))
-				.isEqualTo("Flux.delayElements ⇢ at reactor.foo.Bar.baz(Bar.java:123)");
+				.isEqualTo("Flux.delayElements ⇢ reactor.foo.Bar.baz(Bar.java:123)");
+	}
+
+	@Test
+	public void extractOperatorLine_skipFirst() {
+		String stack = "    "
+				+ "\n"
+				+ "\n   "
+				+ "\t"
+				+ "\t   "
+				+ "\t\n"
+				+ "\t  \n  "
+				+ "\treactor.core.publisher.Flux.concatMap(Flux.java:3071)\n"
+				+ "\treactor.foo.Bar.baz(Bar.java:123)\n"
+				+ "\treactor.foo.Bar.baz2(Bar.java:456)\n"
+				+ "\treactor.foo.Bar.baz3(Bar.java:789)\n";
+
+		assertThat(Traces.extractOperatorAssemblyInformation(stack, true))
+				.isEqualTo("reactor.foo.Bar.baz(Bar.java:123)");
 	}
 
 	@Test

@@ -15,6 +15,7 @@
  */
 package reactor.core.scheduler;
 
+import static java.lang.String.format;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.lang.management.ManagementFactory;
@@ -24,6 +25,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import org.junit.*;
 
+import org.junit.jupiter.api.Test;
 import reactor.core.Scannable;
 import reactor.core.publisher.*;
 import reactor.core.scheduler.Scheduler.Worker;
@@ -112,14 +114,14 @@ public class SingleSchedulerTest extends AbstractSchedulerTest {
     	            w.schedule(r);
     	        }
     	        
-    	        Assert.assertTrue(cdl.await(5, TimeUnit.SECONDS));
+    	        assertThat(cdl.await(5, TimeUnit.SECONDS)).isTrue();
 
     	        System.gc();
     	        Thread.sleep(200);
 
                 long after = ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed();
 
-    	        Assert.assertTrue(String.format("%,d -> %,d", before, after), before + 20_000_000 > after);
+    	        assertThat(before + 20_000_000).as("%,d -> %,d", before, after).isGreaterThan(after);
 	        } finally {
 	            w.dispose();
 	        }

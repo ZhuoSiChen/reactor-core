@@ -27,8 +27,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import org.assertj.core.api.Assertions;
-import org.junit.After;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.reactivestreams.Publisher;
 
 import reactor.core.publisher.Flux;
@@ -43,16 +42,15 @@ import reactor.test.subscriber.AssertSubscriber;
 import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
 
-import static org.hamcrest.CoreMatchers.is;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.Assert.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 /**
  * @author Stephane Maldini
  */
 public class MonoTests {
 
-	@After
+	@AfterEach
 	public void resetHooks() {
 		Hooks.resetOnEachOperator();
 		Hooks.resetOnLastOperator();
@@ -98,9 +96,9 @@ public class MonoTests {
 		            .expectComplete()
 		            .verify(Duration.ofSeconds(5));
 
-		assertThat(signals.size(), is(2));
-		assertThat("onNext", signals.get(0).get(), is(1));
-		assertTrue("onComplete expected", signals.get(1).isOnComplete());
+		assertThat(signals).hasSize(2);
+		assertThat(signals.get(0).get()).as("onNext").isEqualTo(1);
+		assertThat(signals.get(1).isOnComplete()).as("onComplete expected").isTrue();
 	}
 
 	@Test
@@ -113,8 +111,8 @@ public class MonoTests {
 		            .expectComplete()
 		            .verify();
 
-		assertThat(signals.size(), is(1));
-		assertTrue("onComplete expected", signals.get(0).isOnComplete());
+		assertThat(signals).hasSize(1);
+		assertThat(signals.get(0).isOnComplete()).as("onComplete expected").isTrue();
 
 	}
 
@@ -128,15 +126,16 @@ public class MonoTests {
 		            .expectErrorMessage("foo")
 		            .verify();
 
-		assertThat(signals.size(), is(1));
-		assertTrue("onError expected", signals.get(0).isOnError());
-		assertThat("plain exception expected", signals.get(0).getThrowable().getMessage(),
-				is("foo"));
+		assertThat(signals).hasSize(1);
+		assertThat(signals.get(0).isOnError()).as("onError expected").isTrue();
+		assertThat(signals.get(0).getThrowable()).as("plain exception expected").hasMessage("foo");
 	}
 
-	@Test(expected = NullPointerException.class)
+	@Test
 	public void testDoOnEachSignalNullConsumer() {
-		Mono.just(1).doOnEach(null);
+		assertThatExceptionOfType(NullPointerException.class).isThrownBy(() -> {
+			Mono.just(1).doOnEach(null);
+		});
 	}
 
 	@Test
@@ -183,8 +182,8 @@ public class MonoTests {
 		catch (RuntimeException re){
 
 		}
-		assertThat("Error latch was counted down", latch1.await(1, TimeUnit.SECONDS), is(true));
-		assertThat("Complete latch was not counted down", latch2.getCount(), is(1L));
+		assertThat(latch1.await(1, TimeUnit.SECONDS)).as ("Error latch was counted down").isTrue();
+		assertThat(latch2.getCount()).as("Complete latch was not counted down").isEqualTo(1L);
 	}
 
 	@Test
@@ -196,7 +195,7 @@ public class MonoTests {
 		               .subscribeOn(Schedulers.parallel())
 		               .then(Mono.just("world"))
 		               .block();
-		assertThat("Alternate mono not seen", h, is("world"));
+		assertThat(h).as("Alternate mono not seen").isEqualTo("world");
 	}
 
 	@Test
@@ -208,7 +207,7 @@ public class MonoTests {
 		                             .flatMap(t -> Mono.just(t+ " world"))
 		                             .elapsed()
 		                             .block();
-		assertThat("Alternate mono not seen", h.getT2(), is("Spring Reactive world"));
+		assertThat(h.getT2()).as("Alternate mono not seen").isEqualTo("Spring Reactive world");
 		System.out.println(h.getT1());
 	}
 
@@ -218,7 +217,7 @@ public class MonoTests {
 		promise.onNext("test");
 		final CountDownLatch successCountDownLatch = new CountDownLatch(1);
 		promise.subscribe(v -> successCountDownLatch.countDown());
-		assertThat("Failed", successCountDownLatch.await(10, TimeUnit.SECONDS));
+		assertThat(successCountDownLatch.await(10, TimeUnit.SECONDS)).isTrue();
 	}
 
 	private static Mono<Integer> handle(String t) {

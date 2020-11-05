@@ -65,6 +65,7 @@ final class FluxRange extends Flux<Integer>
 			actual.onSubscribe(new RangeSubscriptionConditional((ConditionalSubscriber<? super Integer>) actual, st, en));
 			return;
 		}
+		//由 CoreSubscriber 执行 onSubscribe 提交一个 RangeSubscription
 		actual.onSubscribe(new RangeSubscription(actual, st, en));
 	}
 

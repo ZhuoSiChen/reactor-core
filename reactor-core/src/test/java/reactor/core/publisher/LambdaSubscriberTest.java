@@ -19,14 +19,14 @@ package reactor.core.publisher;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.reactivestreams.Subscription;
 
 import reactor.core.Scannable;
 import reactor.util.context.Context;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.fail;
+import static org.assertj.core.api.Assertions.fail;
 
 public class LambdaSubscriberTest {
 

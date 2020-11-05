@@ -25,7 +25,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscription;
 import reactor.core.CoreSubscriber;
@@ -104,7 +105,7 @@ public class MonoExpandTest {
 
 			for (int j = 0; j <= i; j++) {
 				assertThat(list.get(j).intValue())
-						.as(tag + ", " + list)
+						.as("%s, %s", tag, list)
 						.isEqualTo(i - j);
 			}
 		}
@@ -127,7 +128,7 @@ public class MonoExpandTest {
 
 			for (int j = 0; j <= i; j++) {
 				assertThat(list.get(j).intValue())
-						.as(tag + ", " + list)
+						.as("%s, %s", tag, list)
 						.isEqualTo(i - j);
 			}
 		}
@@ -273,7 +274,8 @@ public class MonoExpandTest {
 		);
 	}
 
-	@Test(timeout = 5000)
+	@Test
+	@Timeout(5)
 	public void depthFirst() {
 		FluxExpandTest.Node root = createTest();
 
@@ -311,7 +313,8 @@ public class MonoExpandTest {
 		            .verify(Duration.ofSeconds(5));
 	}
 
-	@Test(timeout = 5000)
+	@Test
+	@Timeout(5)
 	public void breadthFirst() {
 		FluxExpandTest.Node root = createTest();
 

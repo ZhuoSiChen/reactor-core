@@ -59,6 +59,8 @@ public class JavaConventions implements Plugin<Project> {
 					       "-Xlint:processing",
 					       "-Xlint:static",
 					       "-Xlint:try",
+						   "-Xmaxerrs", "500",
+						   "-Xmaxwarns", "500",
 					       "-Xlint:deprecation",
 					       "-Xlint:unchecked",
 					       "-Xlint:-serial",      // intentionally disabled

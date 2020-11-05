@@ -18,16 +18,22 @@ package reactor.core.publisher;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import reactor.test.subscriber.AssertSubscriber;
 import reactor.util.context.Context;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+
 public class FluxDeferTest {
 
-	@Test(expected = NullPointerException.class)
+	@Test
 	public void supplierNull() {
-		Flux.<Integer>defer(null);
+		assertThatExceptionOfType(NullPointerException.class).isThrownBy(() -> {
+			Flux.<Integer>defer(null);
+		});
 	}
 
 	@Test
@@ -74,9 +80,9 @@ public class FluxDeferTest {
 		Flux<Integer> source =
 				Flux.defer(() -> Flux.just(i.incrementAndGet()));
 
-		Assert.assertEquals(source.blockLast().intValue(), 1);
-		Assert.assertEquals(source.blockLast().intValue(), 2);
-		Assert.assertEquals(source.blockLast().intValue(), 3);
+		assertThat(source.blockLast().intValue()).isEqualTo(1);
+		assertThat(source.blockLast().intValue()).isEqualTo(2);
+		assertThat(source.blockLast().intValue()).isEqualTo(3);
 	}
 
 	@Test
@@ -90,8 +96,8 @@ public class FluxDeferTest {
 						"i", new AtomicInteger()
 				));
 
-		Assert.assertEquals(source.blockFirst().intValue(), 1);
-		Assert.assertEquals(source.blockFirst().intValue(), 2);
-		Assert.assertEquals(source.blockFirst().intValue(), 3);
+		assertThat(source.blockLast().intValue()).isEqualTo(1);
+		assertThat(source.blockLast().intValue()).isEqualTo(2);
+		assertThat(source.blockLast().intValue()).isEqualTo(3);
 	}
 }

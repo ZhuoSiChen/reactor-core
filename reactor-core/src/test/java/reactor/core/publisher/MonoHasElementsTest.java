@@ -20,7 +20,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.reactivestreams.Subscription;
 import reactor.core.CoreSubscriber;
 import reactor.core.Scannable;
@@ -28,12 +28,15 @@ import reactor.test.StepVerifier;
 import reactor.test.subscriber.AssertSubscriber;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 public class MonoHasElementsTest {
 
-	@Test(expected = NullPointerException.class)
+	@Test
 	public void sourceNull() {
-		new MonoHasElements<>(null);
+		assertThatExceptionOfType(NullPointerException.class).isThrownBy(() -> {
+			new MonoHasElements<>(null);
+		});
 	}
 
 	@Test
@@ -113,7 +116,7 @@ public class MonoHasElementsTest {
 	                .expectNext(true)
 	                .verifyComplete();
 
-		assertThat(cancelCount.get()).isEqualTo(1);
+		assertThat(cancelCount).hasValue(1);
 	}
 
 	@Test
@@ -126,7 +129,7 @@ public class MonoHasElementsTest {
 		            .expectNext(true)
 		            .verifyComplete();
 
-		assertThat(cancelCount.get()).isEqualTo(0);
+		assertThat(cancelCount).hasValue(0);
 	}
 
 	@Test

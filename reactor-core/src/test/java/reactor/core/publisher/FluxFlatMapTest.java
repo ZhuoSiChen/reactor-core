@@ -18,34 +18,23 @@ package reactor.core.publisher;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
-import java.util.stream.IntStream;
-import java.util.stream.LongStream;
-import java.util.stream.Stream;
 
 import org.awaitility.Awaitility;
-import org.junit.Assert;
-import org.junit.Ignore;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 import org.reactivestreams.Publisher;
-import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
-
 import reactor.core.CoreSubscriber;
 import reactor.core.Exceptions;
 import reactor.core.Fuseable;
 import reactor.core.Scannable;
 import reactor.core.publisher.FluxPeekFuseableTest.AssertQueueSubscription;
-import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.test.StepVerifier;
 import reactor.test.publisher.TestPublisher;
@@ -54,6 +43,8 @@ import reactor.test.util.RaceTestUtils;
 import reactor.util.concurrent.Queues;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.assertj.core.api.Assertions.fail;
 
 public class FluxFlatMapTest {
 
@@ -149,9 +140,9 @@ public class FluxFlatMapTest {
 		.flatMap(v -> Flux.just(v)).subscribe(ts);
 
 		ts.assertNoValues()
-		.assertError(RuntimeException.class)
-		  .assertErrorWith( e -> Assert.assertTrue(e.getMessage().contains("forced failure")))
-		.assertNotComplete();
+				.assertError(RuntimeException.class)
+				.assertErrorWith(e -> assertThat(e).hasMessageContaining("forced failure"))
+				.assertNotComplete();
 	}
 
 	@Test
@@ -161,9 +152,9 @@ public class FluxFlatMapTest {
 		Flux.just(1).flatMap(v -> Flux.error(new RuntimeException("forced failure"))).subscribe(ts);
 
 		ts.assertNoValues()
-		.assertError(RuntimeException.class)
-		  .assertErrorWith( e -> Assert.assertTrue(e.getMessage().contains("forced failure")))
-		.assertNotComplete();
+				.assertError(RuntimeException.class)
+				.assertErrorWith(e -> assertThat(e).hasMessageContaining("forced failure"))
+				.assertNotComplete();
 	}
 
 	@Test
@@ -385,14 +376,14 @@ public class FluxFlatMapTest {
 
 		source.flatMap(v -> v == 1 ? source1 : source2, 1, 32).subscribe(ts);
 
-		Assert.assertEquals(1, emission.get());
+		assertThat(emission).hasValue(1);
 
 		ts.assertNoValues()
 		.assertNoError()
 		.assertNotComplete();
 
-		Assert.assertTrue("source1 no subscribers?", source1.downstreamCount() != 0);
-		Assert.assertFalse("source2 has subscribers?", source2.downstreamCount() != 0);
+		assertThat(source1.downstreamCount()).as("source1 no subscribers?").isNotEqualTo(0L);
+		assertThat(source2.downstreamCount()).as("source2 has subscribers?").isEqualTo(0L);
 
 		source1.onNext(1);
 		source2.onNext(10);
@@ -420,14 +411,14 @@ public class FluxFlatMapTest {
 
 		source.flatMap(v -> v == 1 ? source1 : source2, Integer.MAX_VALUE, 32).subscribe(ts);
 
-		Assert.assertEquals(1000, emission.get());
+		assertThat(emission).hasValue(1000);
 
 		ts.assertNoValues()
 		.assertNoError()
 		.assertNotComplete();
 
-		Assert.assertTrue("source1 no subscribers?", source1.downstreamCount() != 0);
-		Assert.assertTrue("source2 no  subscribers?", source2.downstreamCount() != 0);
+		assertThat(source1.downstreamCount()).as("source1 no subscribers?").isNotEqualTo(0L);
+		assertThat(source2.downstreamCount()).as("source2 has subscribers?").isNotEqualTo(0L);
 
 		source1.onNext(1);
 		source1.onComplete();
@@ -499,16 +490,20 @@ public class FluxFlatMapTest {
 		               .getPrefetch()).isEqualTo(Queues.XS_BUFFER_SIZE);
 	}
 
-	@Test(expected = IllegalArgumentException.class)
+	@Test
 	public void failMaxConcurrency() {
-		Flux.just(1, 2, 3)
-		    .flatMap(Flux::just, -1);
+		assertThatExceptionOfType(IllegalArgumentException.class).isThrownBy(() -> {
+			Flux.just(1, 2, 3)
+					.flatMap(Flux::just, -1);
+		});
 	}
 
-	@Test(expected = IllegalArgumentException.class)
+	@Test
 	public void failPrefetch() {
-		Flux.just(1, 2, 3)
-		    .flatMap(Flux::just, 128, -1);
+		assertThatExceptionOfType(IllegalArgumentException.class).isThrownBy(() -> {
+			Flux.just(1, 2, 3)
+					.flatMap(Flux::just, 128, -1);
+		});
 	}
 
 	@Test
@@ -725,7 +720,7 @@ public class FluxFlatMapTest {
 				s.onError(new Exception("test2"));
 			}).flatMap(Flux::just))
 			            .verifyErrorMessage("test");
-			Assert.fail();
+			fail("Exception expected");
 		}
 		catch (Exception e) {
 			assertThat(Exceptions.unwrap(e)).hasMessage("test2");
@@ -742,7 +737,7 @@ public class FluxFlatMapTest {
 				s.onError(new Exception("test"));
 			}).flatMap(Flux::just))
 			            .verifyErrorMessage("test");
-			Assert.fail();
+			fail("Exception expected");
 		}
 		catch (Exception e) {
 			assertThat(Exceptions.unwrap(e)).hasMessage("test");
@@ -759,7 +754,7 @@ public class FluxFlatMapTest {
 				s.onError(new Exception("test"));
 			})))
 			            .verifyErrorMessage("test");
-			Assert.fail();
+			fail("Exception expected");
 		}
 		catch (Exception e) {
 			assertThat(Exceptions.unwrap(e)).hasMessage("test");
@@ -1244,7 +1239,7 @@ public class FluxFlatMapTest {
 
 		Flux<Integer> f1 = Mono.just(1).flatMapMany(i -> Flux.error(new Exception("test")));
 		StepVerifier.create(f1).verifyErrorMessage("test");
-		assertThat(errorValue.get()).isEqualTo(1);
+		assertThat(errorValue).hasValue(1);
 
 //		Flux<Integer> f2 = Mono.just(2).flatMapMany(i -> {
 //			throw new RuntimeException("test");
@@ -1358,7 +1353,7 @@ public class FluxFlatMapTest {
 		            .consumeRecordedWith(c ->  assertThat(c).containsExactlyInAnyOrder(0, 2, 4))
 		            .verifyError();
 
-		assertThat(onNextSignals.get()).isEqualTo(10);
+		assertThat(onNextSignals).hasValue(10);
 	}
 
 
@@ -1465,7 +1460,7 @@ public class FluxFlatMapTest {
     }
 
 	@Test
-	@Ignore
+	@Disabled
 	public void progressiveRequest() {
 		TestPublisher<Integer> tp = TestPublisher.create();
 		StepVerifier.create(tp.flux()

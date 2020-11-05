@@ -19,25 +19,24 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
-import org.junit.After;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import reactor.core.Disposable;
 import reactor.core.Exceptions;
-import reactor.test.AutoDisposingRule;
+import reactor.test.AutoDisposingExtension;
 
-import static org.assertj.core.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.assertj.core.api.Assertions.fail;
 
 /**
  * @author Stephane Maldini
  */
 public abstract class AbstractSchedulerTest {
 
-	@Rule
-	public AutoDisposingRule afterTest = new AutoDisposingRule();
+	@RegisterExtension
+	public AutoDisposingExtension afterTest = new AutoDisposingExtension();
 
 	protected abstract Scheduler scheduler();
 
@@ -60,11 +59,12 @@ public abstract class AbstractSchedulerTest {
 	protected Scheduler schedulerNotCached() {
 		Scheduler s = scheduler();
 		assertThat(s).as("common scheduler tests should not use a CachedScheduler")
-		             .isNotInstanceOf(Schedulers.CachedScheduler.class);
+				.isNotInstanceOf(Schedulers.CachedScheduler.class);
 		return s;
 	}
 
-	@Test(timeout = 10000)
+	@Test
+	@Timeout(10)
 	final public void directScheduleAndDispose() throws Exception {
 		Scheduler s = schedulerNotCached();
 
@@ -80,7 +80,7 @@ public abstract class AbstractSchedulerTest {
 						latch.countDown();
 						if (latch2 != null && !latch2.await(10,
 								TimeUnit.SECONDS) && shouldCheckInterrupted()) {
-							Assert.fail("Should have interrupted");
+							fail("Should have interrupted");
 						}
 					}
 					catch (InterruptedException e) {
@@ -138,7 +138,8 @@ public abstract class AbstractSchedulerTest {
 		}
 	}
 
-	@Test(timeout = 10000)
+	@Test
+	@Timeout(10)
 	final public void workerScheduleAndDispose() throws Exception {
 		Scheduler s = schedulerNotCached();
 		try {
@@ -146,8 +147,7 @@ public abstract class AbstractSchedulerTest {
 
 			assertThat(w.isDisposed()).isFalse();
 			CountDownLatch latch = new CountDownLatch(1);
-			CountDownLatch latch2 = shouldCheckDisposeTask() ? new CountDownLatch(1)
-					: null;
+			CountDownLatch latch2 = shouldCheckDisposeTask() ? new CountDownLatch(1) : null;
 
 			try {
 				Disposable d = w.schedule(() -> {
@@ -155,7 +155,7 @@ public abstract class AbstractSchedulerTest {
 						latch.countDown();
 						if(latch2 != null && !latch2.await(10, TimeUnit.SECONDS) &&
 								shouldCheckInterrupted()){
-							Assert.fail("Should have interrupted");
+							fail("Should have interrupted");
 						}
 					}
 					catch (InterruptedException e){
@@ -229,7 +229,8 @@ public abstract class AbstractSchedulerTest {
 		}
 	}
 
-	@Test(timeout = 10000)
+	@Test
+	@Timeout(10)
 	final public void directScheduleAndDisposeDelay() throws Exception {
 		Scheduler s = schedulerNotCached();
 
@@ -267,15 +268,15 @@ public abstract class AbstractSchedulerTest {
 			s.dispose();
 			assertThat(s.isDisposed()).isTrue();
 
-			assertThatExceptionOfType(RejectedExecutionException.class)
-					.isThrownBy(() -> s.schedule(() -> { }));
+			assertThatExceptionOfType(RejectedExecutionException.class).isThrownBy(() -> s.schedule(() -> { }));
 		}
 		finally {
 			s.dispose();
 		}
 	}
 
-	@Test(timeout = 10000)
+	@Test
+	@Timeout(10)
 	final public void workerScheduleAndDisposeDelay() throws Exception {
 		Scheduler s = schedulerNotCached();
 		Scheduler.Worker w = s.createWorker();
@@ -324,7 +325,8 @@ public abstract class AbstractSchedulerTest {
 		}
 	}
 
-	@Test(timeout = 10000)
+	@Test
+	@Timeout(10)
 	final public void directScheduleAndDisposePeriod() throws Exception {
 		Scheduler s = schedulerNotCached();
 
@@ -365,15 +367,15 @@ public abstract class AbstractSchedulerTest {
 			s.dispose();
 			assertThat(s.isDisposed()).isTrue();
 
-			assertThatExceptionOfType(RejectedExecutionException.class)
-					.isThrownBy(() -> s.schedule(() -> { }));
+			assertThatExceptionOfType(RejectedExecutionException.class).isThrownBy(() -> s.schedule(() -> {	}));
 		}
 		finally {
 			s.dispose();
 		}
 	}
 
-	@Test(timeout = 10000)
+	@Test
+	@Timeout(10)
 	final public void workerScheduleAndDisposePeriod() throws Exception {
 		Scheduler s = schedulerNotCached();
 		Scheduler.Worker w = s.createWorker();

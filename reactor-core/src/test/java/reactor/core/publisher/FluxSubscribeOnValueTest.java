@@ -19,7 +19,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.logging.Level;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import reactor.core.CoreSubscriber;
 import reactor.core.Exceptions;
 import reactor.core.Fuseable;
@@ -28,7 +28,6 @@ import reactor.core.scheduler.Schedulers;
 import reactor.test.StepVerifier;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.assertTrue;
 
 public class FluxSubscribeOnValueTest {
 
@@ -55,8 +54,7 @@ public class FluxSubscribeOnValueTest {
 		int minExec = 2;
 
 		for (Integer counted : execs.values()) {
-			assertTrue("Thread used less than " + minExec + " " + "times",
-					counted >= minExec);
+			assertThat(counted).as("Thread used less than %d times", minExec).isGreaterThanOrEqualTo(minExec);
 		}
 
 	}
