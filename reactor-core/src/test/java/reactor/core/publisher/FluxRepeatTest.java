@@ -17,12 +17,15 @@
 package reactor.core.publisher;
 
 import java.time.Duration;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
 import reactor.test.StepVerifier;
 import reactor.test.subscriber.AssertSubscriber;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 public class FluxRepeatTest {
@@ -167,5 +170,25 @@ public class FluxRepeatTest {
 		                        .repeat(2, bool::get))
 		            .expectNext(1, 2, 3, 4)
 		            .verifyComplete();
+	}
+
+	@Test
+	public void onLastAssemblyOnce() {
+		AtomicInteger onAssemblyCounter = new AtomicInteger();
+		String hookKey = UUID.randomUUID().toString();
+		try {
+			Hooks.onLastOperator(hookKey, publisher -> {
+				onAssemblyCounter.incrementAndGet();
+				return publisher;
+			});
+			Mono.just(1)
+			    .repeat(1)
+			    .blockLast();
+
+			assertThat(onAssemblyCounter).hasValue(1);
+		}
+		finally {
+			Hooks.resetOnLastOperator(hookKey);
+		}
 	}
 }

@@ -18,6 +18,7 @@ package reactor.core.publisher;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Predicate;
 
 import org.junit.jupiter.api.Test;
 import reactor.test.StepVerifier;
@@ -25,6 +26,7 @@ import reactor.test.subscriber.AssertSubscriber;
 
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
+@SuppressWarnings("deprecation") //retry with Predicate are deprecated, the underlying implementation is going to be removed ultimately
 public class FluxRetryPredicateTest {
 
 	final Flux<Integer> source = Flux.concat(Flux.range(1, 5),
@@ -41,7 +43,7 @@ public class FluxRetryPredicateTest {
 	public void predicateNull() {
 		assertThatExceptionOfType(NullPointerException.class).isThrownBy(() -> {
 			Flux.never()
-					.retry(null);
+					.retry((Predicate<? super Throwable>) null);
 		});
 	}
 

@@ -22,6 +22,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.reactivestreams.Subscription;
 
 import reactor.core.CoreSubscriber;
@@ -30,6 +31,7 @@ import reactor.core.Disposables;
 import reactor.core.Scannable;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
+import reactor.test.AutoDisposingExtension;
 import reactor.test.StepVerifier;
 import reactor.test.subscriber.AssertSubscriber;
 import reactor.test.util.RaceTestUtils;
@@ -37,7 +39,10 @@ import reactor.test.util.RaceTestUtils;
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class MonoSubscribeOnTest {
-	
+
+	@RegisterExtension
+	public AutoDisposingExtension afterTest = new AutoDisposingExtension();
+
 	/*@Test
 	public void constructors() {
 		ConstructorTestBuilder ctb = new ConstructorTestBuilder(FluxPublishOn.class);
@@ -169,7 +174,7 @@ public class MonoSubscribeOnTest {
 		})
 		    .timeout(Duration.ofMillis(100L))
 		    .onErrorResume(t -> Mono.fromCallable(() -> 1))
-		    .subscribeOn(Schedulers.newElastic("timeout"))
+		    .subscribeOn(afterTest.autoDispose(Schedulers.newBoundedElastic(4, 100, "timeout")))
 		    .subscribe(ts);
 
 		ts.request(1);

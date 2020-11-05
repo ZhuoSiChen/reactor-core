@@ -27,6 +27,7 @@ import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.reactivestreams.Subscription;
 
 import reactor.core.CoreSubscriber;
@@ -483,7 +484,8 @@ public class FluxReplayTest extends FluxOperatorTest<String, String> {
         Assertions.assertThat(test.scan(Scannable.Attr.CANCELLED)).isTrue();
     }
 
-	@Test(timeout = 5000)
+	@Test
+	@Timeout(5)
 	public void cacheSingleSubscriberWithMultipleRequestsDoesntHang() {
 		List<Integer> listFromStream = Flux
 				.range(0, 1000)

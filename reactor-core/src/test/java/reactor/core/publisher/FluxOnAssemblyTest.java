@@ -23,6 +23,7 @@ import java.util.Objects;
 import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
+import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscription;
 import reactor.core.CoreSubscriber;
 import reactor.core.Scannable;
@@ -88,25 +89,20 @@ public class FluxOnAssemblyTest {
 
 		Hooks.onOperatorDebug();
 
-		try {
-			Flux<Integer> tested = Flux.range(1, 10)
-			                           .map(i -> i < 3 ? i : null)
-			                           .filter(i -> i % 2 == 0)
-			                           .checkpoint()
-			                           .doOnError(t -> t.printStackTrace(new PrintWriter(
-					                           sw)));
-			StepVerifier.create(tested)
-			            .expectNext(2)
-			            .verifyError();
+		Flux<Integer> tested = Flux.range(1, 10)
+		                           .map(i -> i < 3 ? i : null)
+		                           .filter(i -> i % 2 == 0)
+		                           .checkpoint()
+		                           .doOnError(t -> t.printStackTrace(new PrintWriter(
+				                           sw)));
+		StepVerifier.create(tested)
+		            .expectNext(2)
+		            .verifyError();
 
-			String debugStack = sw.toString();
+		String debugStack = sw.toString();
 
-			assertThat(debugStack).contains(
-					"Assembly trace from producer [reactor.core.publisher.FluxMapFuseable] :");
-		}
-		finally {
-			Hooks.resetOnOperatorDebug();
-		}
+		assertThat(debugStack).contains(
+				"Assembly trace from producer [reactor.core.publisher.FluxMapFuseable] :");
 	}
 
 	@Test
@@ -142,7 +138,11 @@ public class FluxOnAssemblyTest {
 
 		String debugStack = sw.toString();
 
-		assertThat(debugStack).contains("Assembly site of producer [reactor.core.publisher.FluxFilterFuseable] is identified by light checkpoint [foo].");
+		Iterator<String> lines = seekToBacktrace(debugStack);
+
+		assertThat(lines.next())
+				.as("first backtrace line")
+				.endsWith("checkpoint ⇢ foo");
 	}
 
 	@Test
@@ -193,7 +193,11 @@ public class FluxOnAssemblyTest {
 
 		String debugStack = sw.toString();
 
-		assertThat(debugStack).contains("Assembly site of producer [reactor.core.publisher.MonoFilterFuseable] is identified by light checkpoint [foo].");
+		Iterator<String> lines = seekToBacktrace(debugStack);
+
+		assertThat(lines.next())
+				.as("first backtrace line")
+				.endsWith("checkpoint ⇢ foo");
 	}
 
 	@Test
@@ -201,7 +205,7 @@ public class FluxOnAssemblyTest {
 		StringWriter sw = new StringWriter();
 		Flux<Integer> tested = Flux.range(1, 10)
 		                         .parallel(2)
-		                         .composeGroup(g -> g.map(i -> (Integer) null))
+		                         .transformGroups(g -> g.map(i -> (Integer) null))
 		                         .checkpoint()
 		                         .sequential()
 		                         .doOnError(t -> t.printStackTrace(new PrintWriter(sw)));
@@ -220,7 +224,7 @@ public class FluxOnAssemblyTest {
 		int baseline = getBaseline();
 		Flux<Integer> tested = Flux.range(1, 10)
 		                           .parallel(2)
-		                           .composeGroup(g -> g.map(i -> (Integer) null))
+		                           .transformGroups(g -> g.map(i -> (Integer) null))
 		                           .checkpoint("descriptionCorrelation1234", true)
 		                           .sequential()
 		                           .doOnError(t -> t.printStackTrace(new PrintWriter(sw)));
@@ -231,10 +235,16 @@ public class FluxOnAssemblyTest {
 		String debugStack = sw.toString();
 
 		assertThat(debugStack).contains("Assembly trace from producer [reactor.core.publisher.ParallelSource], described as [descriptionCorrelation1234] :\n"
-				+ "\treactor.core.publisher.ParallelFlux.checkpoint(ParallelFlux.java:239)\n"
+				+ "\treactor.core.publisher.ParallelFlux.checkpoint(ParallelFlux.java:244)\n"
 				+ "\treactor.core.publisher.FluxOnAssemblyTest.parallelFluxCheckpointDescriptionAndForceStack(FluxOnAssemblyTest.java:" + (baseline + 4) + ")\n");
-		assertThat(debugStack).endsWith("Error has been observed by the following operator(s):\n"
-				+ "\t|_\tParallelFlux.checkpoint ⇢ reactor.core.publisher.FluxOnAssemblyTest.parallelFluxCheckpointDescriptionAndForceStack(FluxOnAssemblyTest.java:" + (baseline + 4) + ")\n\n");
+
+		Iterator<String> lines = seekToBacktrace(debugStack);
+
+		assertThat(lines)
+				.startsWith(
+						"|_ ParallelFlux.checkpoint ⇢ at reactor.core.publisher.FluxOnAssemblyTest.parallelFluxCheckpointDescriptionAndForceStack(FluxOnAssemblyTest.java:" + (baseline + 4) + ")",
+						"Stack trace:"
+				);
 	}
 
 	@Test
@@ -242,7 +252,7 @@ public class FluxOnAssemblyTest {
 		StringWriter sw = new StringWriter();
 		Flux<Integer> tested = Flux.range(1, 10)
 		                           .parallel(2)
-		                           .composeGroup(g -> g.map(i -> (Integer) null))
+		                           .transformGroups(g -> g.map(i -> (Integer) null))
 		                           .checkpoint("light checkpoint identifier")
 		                           .sequential()
 		                           .doOnError(t -> t.printStackTrace(new PrintWriter(sw)));
@@ -252,7 +262,11 @@ public class FluxOnAssemblyTest {
 
 		String debugStack = sw.toString();
 
-		assertThat(debugStack).endsWith("Assembly site of producer [reactor.core.publisher.ParallelSource] is identified by light checkpoint [light checkpoint identifier].\n");
+		Iterator<String> lines = seekToBacktrace(debugStack);
+
+		assertThat(lines.next())
+				.as("first backtrace line")
+				.endsWith("checkpoint ⇢ light checkpoint identifier");
 	}
 
 	@Test
@@ -311,23 +325,67 @@ public class FluxOnAssemblyTest {
 
 		String debugStack = sw.toString();
 
-		Iterator<String> lines = Stream.of(debugStack.split("\n"))
-		                                  .map(String::trim)
-		                                  .iterator();
-
-		while (lines.hasNext()) {
-			if (lines.next().equals("Error has been observed by the following operator(s):")) {
-				break;
-			}
-		}
+		Iterator<String> lines = seekToBacktrace(debugStack);
 
 		assertThat(lines.next())
 				.as("first backtrace line")
-				.contains("Flux.single ⇢ reactor.core.publisher.FluxOnAssemblyTest.stackAndLightCheckpoint(FluxOnAssemblyTest.java:");
+				.contains("Flux.single ⇢ at reactor.core.publisher.FluxOnAssemblyTest.stackAndLightCheckpoint(FluxOnAssemblyTest.java:");
 
 		assertThat(lines.next())
 				.as("second backtrace line")
-				.endsWith("identified by light checkpoint [single].");
+				.endsWith("checkpoint ⇢ single");
+	}
+
+	@Test
+	public void checkpointedPublisher() {
+		StringWriter sw = new StringWriter();
+		Publisher<?> tested = Flux
+				.just(1, 2)
+				.doOnNext(__ -> {
+					throw new RuntimeException("Boom");
+				})
+				.checkpoint("after1")
+				.checkpoint("after2")
+				.doOnError(t -> t.printStackTrace(new PrintWriter(sw)));
+
+		StepVerifier.create(tested)
+		            .verifyError();
+
+		String debugStack = sw.toString();
+
+		Iterator<String> lines = seekToBacktrace(debugStack);
+
+		assertThat(lines.next())
+				.as("first backtrace line")
+				.endsWith("checkpoint ⇢ after1");
+
+		assertThat(lines.next())
+				.as("second backtrace line")
+				.endsWith("checkpoint ⇢ after2");
+	}
+
+	private Iterator<String> seekToBacktrace(String debugStack) {
+		Iterator<String> lines = seekToSupressedAssembly(debugStack);
+		while (lines.hasNext()) {
+			String line = lines.next();
+			if (line.equals("Error has been observed at the following site(s):")) {
+				return lines;
+			}
+		}
+		throw new IllegalStateException("Not found!");
+	}
+
+	private Iterator<String> seekToSupressedAssembly(String debugStack) {
+		Iterator<String> lines = Stream.of(debugStack.split("\n"))
+		                               .map(String::trim)
+		                               .iterator();
+		while (lines.hasNext()) {
+			String line = lines.next();
+			if (line.endsWith("Suppressed: reactor.core.publisher.FluxOnAssembly$OnAssemblyException:")) {
+				return lines;
+			}
+		}
+		throw new IllegalStateException("Not found!");
 	}
 
 	private static int getBaseline() {

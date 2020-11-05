@@ -50,12 +50,6 @@ import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
  */
 public class MonoTests {
 
-	@AfterEach
-	public void resetHooks() {
-		Hooks.resetOnEachOperator();
-		Hooks.resetOnLastOperator();
-	}
-
 	@Test
 	public void errorContinueOnMonoReduction() {
 		AtomicReference<Tuple2<Class, Object>> ref = new AtomicReference<>();
