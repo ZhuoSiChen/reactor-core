@@ -302,7 +302,7 @@ public class FluxCombineLatestTest extends FluxOperatorTest<String, String> {
 		CoreSubscriber<Integer> actual = new LambdaSubscriber<>(null, e -> {}, null, null);
 		FluxCombineLatest.CombineLatestCoordinator<String, Integer> main = new FluxCombineLatest.CombineLatestCoordinator<>(
 				actual, arr -> arr.length, 123, Queues.<FluxCombineLatest.SourceAndArray>one().get(), 456);
-
+		//
 		FluxCombineLatest.CombineLatestInner<String> test = new FluxCombineLatest.CombineLatestInner<>(main, 1, 789);
 		Subscription parent = Operators.emptySubscription();
 		test.onSubscribe(parent);
