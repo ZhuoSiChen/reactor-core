@@ -61,9 +61,9 @@ import reactor.util.context.Context;
  * <p>
  * Use {@link #runOn} to introduce where each 'rail' should run on thread-wise.
  * <p>
- * Use {@link #sequential)} to merge the sources back into a single {@link Flux}.
+ * Use {@link #sequential} to merge the sources back into a single {@link Flux}.
  * <p>
- * Use {@link #then)} to listen for all rails termination in the produced {@link Mono}
+ * Use {@link #then} to listen for all rails termination in the produced {@link Mono}
  * <p>
  * {@link #subscribe(Subscriber)} if you simply want to subscribe to the merged sequence.
  * Note that other variants like {@link #subscribe(Consumer)} instead do multiple
@@ -305,33 +305,6 @@ public abstract class ParallelFlux<T> implements CorePublisher<T> {
 		Mono<List<T>> merged = railSorted.reduce((a, b) -> sortedMerger(a, b, comparator));
 
 		return merged;
-	}
-
-
-	/**
-	 * Allows composing operators off the 'rails', as individual {@link GroupedFlux} instances keyed by
-	 * the zero based rail's index. The transformed groups are {@link Flux#parallel parallelized} back
-	 * once the transformation has been applied.
-	 * <p>
-	 * Note that like in {@link #groups()}, requests and cancellation compose through, and
-	 * cancelling only one rail may result in undefined behavior.
-	 *
-	 * @param composer the composition function to apply on each {@link GroupedFlux rail}
-	 * @param <U> the type of the resulting parallelized flux
-	 * @return a {@link ParallelFlux} of the composed groups
-	 * @deprecated will be removed in 3.4.0. Use {@link #transformGroups(Function)} instead
-	 */
-	@Deprecated
-	public final <U> ParallelFlux<U> composeGroup(Function<? super GroupedFlux<Integer, T>,
-			? extends Publisher<? extends U>> composer) {
-		if (getPrefetch() > -1) {
-			return from(groups().flatMap(composer::apply),
-				parallelism(), getPrefetch(),
-				Queues.small());
-		}
-		else {
-			return from(groups().flatMap(composer::apply), parallelism());
-		}
 	}
 
 	/**
@@ -847,8 +820,8 @@ public abstract class ParallelFlux<T> implements CorePublisher<T> {
 	}
 
 	/**
-	 * Specifies where each 'rail' will observe its incoming values with no work-stealing
-	 * and default prefetch amount.
+	 * Specifies where each 'rail' will observe its incoming values with possible
+	 * work-stealing and default prefetch amount.
 	 * <p>
 	 * This operator uses the default prefetch size returned by {@code
 	 * Queues.SMALL_BUFFER_SIZE}.
@@ -872,7 +845,7 @@ public abstract class ParallelFlux<T> implements CorePublisher<T> {
 	}
 
 	/**
-	 * Specifies where each 'rail' will observe its incoming values with possibly
+	 * Specifies where each 'rail' will observe its incoming values with possible
 	 * work-stealing and a given prefetch amount.
 	 * <p>
 	 * This operator uses the default prefetch size returned by {@code
@@ -978,7 +951,7 @@ public abstract class ParallelFlux<T> implements CorePublisher<T> {
 	 * @param subscribers the subscribers array to run in parallel, the number of items
 	 * must be equal to the parallelism level of this ParallelFlux
 	 */
-	protected abstract void subscribe(CoreSubscriber<? super T>[] subscribers);
+	public abstract void subscribe(CoreSubscriber<? super T>[] subscribers);
 
 	/**
 	 * Subscribes to this {@link ParallelFlux} and triggers the execution chain for all
@@ -1022,7 +995,7 @@ public abstract class ParallelFlux<T> implements CorePublisher<T> {
 			@Nullable Consumer<? super T> onNext,
 			@Nullable Consumer<? super Throwable> onError,
 			@Nullable Runnable onComplete) {
-		return subscribe(onNext, onError, onComplete, (Context) null);
+		return this.subscribe(onNext, onError, onComplete, null, (Context) null);
 	}
 
 	@Override
@@ -1062,7 +1035,6 @@ public abstract class ParallelFlux<T> implements CorePublisher<T> {
 	 * @param onComplete callback on completion signal
 	 * @param initialContext {@link Context} for the rails
 	 */
-	@Deprecated
 	public final Disposable subscribe(
 			@Nullable Consumer<? super T> onNext,
 			@Nullable Consumer<? super Throwable> onError,
@@ -1297,27 +1269,6 @@ public abstract class ParallelFlux<T> implements CorePublisher<T> {
 			source = (ParallelFlux<T>) Hooks.addAssemblyInfo(source, stacktrace);
 		}
 		return source;
-	}
-
-	/**
-	 * Invoke {@link Hooks} pointcut given a {@link ParallelFlux} and returning an
-	 * eventually new {@link ParallelFlux}
-	 *
-	 * @param <T> the value type
-	 * @param source the source to wrap
-	 *
-	 * @return the potentially wrapped source
-	 * @deprecated use {@link Operators#onLastAssembly(CorePublisher)}
-	 */
-	@SuppressWarnings("unchecked")
-	@Deprecated
-	protected static <T> ParallelFlux<T> onLastAssembly(ParallelFlux<T> source) {
-		Function<Publisher, Publisher> hook = Hooks.onLastOperatorHook;
-		if (hook == null) {
-			return source;
-		}
-		return (ParallelFlux<T>) Objects.requireNonNull(hook.apply(source),
-				"LastOperator hook returned null");
 	}
 
 	@SuppressWarnings("unchecked")

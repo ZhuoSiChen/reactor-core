@@ -22,12 +22,14 @@ import java.util.function.Function;
 
 import org.junit.jupiter.api.Test;
 import org.reactivestreams.Subscription;
+
 import reactor.core.CoreSubscriber;
 import reactor.core.Scannable;
 import reactor.test.subscriber.AssertSubscriber;
 import reactor.util.concurrent.Queues;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static reactor.core.publisher.Sinks.EmitFailureHandler.FAIL_FAST;
 
 public class FluxGroupJoinTest {
 
@@ -45,25 +47,25 @@ public class FluxGroupJoinTest {
 	@Test
 	public void behaveAsJoin() {
 		AssertSubscriber<Object> ts = AssertSubscriber.create();
-		DirectProcessor<Integer> source1 = DirectProcessor.create();
-		DirectProcessor<Integer> source2 = DirectProcessor.create();
+		Sinks.Many<Integer> source1 = Sinks.unsafe().many().multicast().directBestEffort();
+		Sinks.Many<Integer> source2 = Sinks.unsafe().many().multicast().directBestEffort();
 
 		Flux<Integer> m =
-				source1.groupJoin(source2, just(Flux.never()), just(Flux.never()), add2)
+				source1.asFlux().groupJoin(source2.asFlux(), just(Flux.never()), just(Flux.never()), add2)
 				       .flatMap(t -> t);
 
 		m.subscribe(ts);
 
-		source1.onNext(1);
-		source1.onNext(2);
-		source1.onNext(4);
+		source1.emitNext(1, FAIL_FAST);
+		source1.emitNext(2, FAIL_FAST);
+		source1.emitNext(4, FAIL_FAST);
 
-		source2.onNext(16);
-		source2.onNext(32);
-		source2.onNext(64);
+		source2.emitNext(16, FAIL_FAST);
+		source2.emitNext(32, FAIL_FAST);
+		source2.emitNext(64, FAIL_FAST);
 
-		source1.onComplete();
-		source2.onComplete();
+		source1.emitComplete(FAIL_FAST);
+		source2.emitComplete(FAIL_FAST);
 
 		ts.assertValues(17, 18, 20, 33, 34, 36, 65, 66, 68)
 		  .assertComplete()
@@ -137,16 +139,16 @@ public class FluxGroupJoinTest {
 	@Test
 	public void leftThrows() {
 		AssertSubscriber<Object> ts = AssertSubscriber.create();
-		DirectProcessor<Integer> source1 = DirectProcessor.create();
-		DirectProcessor<Integer> source2 = DirectProcessor.create();
+		Sinks.Many<Integer> source1 = Sinks.unsafe().many().multicast().directBestEffort();
+		Sinks.Many<Integer> source2 = Sinks.unsafe().many().multicast().directBestEffort();
 
 		Flux<Flux<Integer>> m =
-				source1.groupJoin(source2, just(Flux.never()), just(Flux.never()), add2);
+				source1.asFlux().groupJoin(source2.asFlux(), just(Flux.never()), just(Flux.never()), add2);
 
 		m.subscribe(ts);
 
-		source2.onNext(1);
-		source1.onError(new RuntimeException("Forced failure"));
+		source2.emitNext(1, FAIL_FAST);
+		source1.emitError(new RuntimeException("Forced failure"), FAIL_FAST);
 
 		ts.assertErrorMessage("Forced failure")
 		  .assertNotComplete()
@@ -156,16 +158,16 @@ public class FluxGroupJoinTest {
 	@Test
 	public void rightThrows() {
 		AssertSubscriber<Object> ts = AssertSubscriber.create();
-		DirectProcessor<Integer> source1 = DirectProcessor.create();
-		DirectProcessor<Integer> source2 = DirectProcessor.create();
+		Sinks.Many<Integer> source1 = Sinks.unsafe().many().multicast().directBestEffort();
+		Sinks.Many<Integer> source2 = Sinks.unsafe().many().multicast().directBestEffort();
 
 		Flux<Flux<Integer>> m =
-				source1.groupJoin(source2, just(Flux.never()), just(Flux.never()), add2);
+				source1.asFlux().groupJoin(source2.asFlux(), just(Flux.never()), just(Flux.never()), add2);
 
 		m.subscribe(ts);
 
-		source1.onNext(1);
-		source2.onError(new RuntimeException("Forced failure"));
+		source1.emitNext(1, FAIL_FAST);
+		source2.emitError(new RuntimeException("Forced failure"), FAIL_FAST);
 
 		ts.assertErrorMessage("Forced failure")
 		  .assertNotComplete()
@@ -175,16 +177,16 @@ public class FluxGroupJoinTest {
 	@Test
 	public void leftDurationThrows() {
 		AssertSubscriber<Object> ts = AssertSubscriber.create();
-		DirectProcessor<Integer> source1 = DirectProcessor.create();
-		DirectProcessor<Integer> source2 = DirectProcessor.create();
+		Sinks.Many<Integer> source1 = Sinks.unsafe().many().multicast().directBestEffort();
+		Sinks.Many<Integer> source2 = Sinks.unsafe().many().multicast().directBestEffort();
 
 		Flux<Integer> duration1 = Flux.error(new RuntimeException("Forced failure"));
 
 		Flux<Flux<Integer>> m =
-				source1.groupJoin(source2, just(duration1), just(Flux.never()), add2);
+				source1.asFlux().groupJoin(source2.asFlux(), just(duration1), just(Flux.never()), add2);
 		m.subscribe(ts);
 
-		source1.onNext(1);
+		source1.emitNext(1, FAIL_FAST);
 
 		ts.assertErrorMessage("Forced failure")
 		  .assertNotComplete()
@@ -194,16 +196,16 @@ public class FluxGroupJoinTest {
 	@Test
 	public void rightDurationThrows() {
 		AssertSubscriber<Object> ts = AssertSubscriber.create();
-		DirectProcessor<Integer> source1 = DirectProcessor.create();
-		DirectProcessor<Integer> source2 = DirectProcessor.create();
+		Sinks.Many<Integer> source1 = Sinks.unsafe().many().multicast().directBestEffort();
+		Sinks.Many<Integer> source2 = Sinks.unsafe().many().multicast().directBestEffort();
 
 		Flux<Integer> duration1 = Flux.error(new RuntimeException("Forced failure"));
 
 		Flux<Flux<Integer>> m =
-				source1.groupJoin(source2, just(Flux.never()), just(duration1), add2);
+				source1.asFlux().groupJoin(source2.asFlux(), just(Flux.never()), just(duration1), add2);
 		m.subscribe(ts);
 
-		source2.onNext(1);
+		source2.emitNext(1, FAIL_FAST);
 
 		ts.assertErrorMessage("Forced failure")
 		  .assertNotComplete()
@@ -213,18 +215,18 @@ public class FluxGroupJoinTest {
 	@Test
 	public void leftDurationSelectorThrows() {
 		AssertSubscriber<Object> ts = AssertSubscriber.create();
-		DirectProcessor<Integer> source1 = DirectProcessor.create();
-		DirectProcessor<Integer> source2 = DirectProcessor.create();
+		Sinks.Many<Integer> source1 = Sinks.unsafe().many().multicast().directBestEffort();
+		Sinks.Many<Integer> source2 = Sinks.unsafe().many().multicast().directBestEffort();
 
 		Function<Integer, Flux<Integer>> fail = t1 -> {
 			throw new RuntimeException("Forced failure");
 		};
 
 		Flux<Flux<Integer>> m =
-				source1.groupJoin(source2, fail, just(Flux.never()), add2);
+				source1.asFlux().groupJoin(source2.asFlux(), fail, just(Flux.never()), add2);
 		m.subscribe(ts);
 
-		source1.onNext(1);
+		source1.emitNext(1, FAIL_FAST);
 
 		ts.assertErrorMessage("Forced failure")
 		  .assertNotComplete()
@@ -234,18 +236,18 @@ public class FluxGroupJoinTest {
 	@Test
 	public void rightDurationSelectorThrows() {
 		AssertSubscriber<Object> ts = AssertSubscriber.create();
-		DirectProcessor<Integer> source1 = DirectProcessor.create();
-		DirectProcessor<Integer> source2 = DirectProcessor.create();
+		Sinks.Many<Integer> source1 = Sinks.unsafe().many().multicast().directBestEffort();
+		Sinks.Many<Integer> source2 = Sinks.unsafe().many().multicast().directBestEffort();
 
 		Function<Integer, Flux<Integer>> fail = t1 -> {
 			throw new RuntimeException("Forced failure");
 		};
 
 		Flux<Flux<Integer>> m =
-				source1.groupJoin(source2, just(Flux.never()), fail, add2);
+				source1.asFlux().groupJoin(source2.asFlux(), just(Flux.never()), fail, add2);
 		m.subscribe(ts);
 
-		source2.onNext(1);
+		source2.emitNext(1, FAIL_FAST);
 
 		ts.assertErrorMessage("Forced failure")
 		  .assertNotComplete()
@@ -255,23 +257,35 @@ public class FluxGroupJoinTest {
 	@Test
 	public void resultSelectorThrows() {
 		AssertSubscriber<Object> ts = AssertSubscriber.create();
-		DirectProcessor<Integer> source1 = DirectProcessor.create();
-		DirectProcessor<Integer> source2 = DirectProcessor.create();
+		Sinks.Many<Integer> source1 = Sinks.unsafe().many().multicast().directBestEffort();
+		Sinks.Many<Integer> source2 = Sinks.unsafe().many().multicast().directBestEffort();
 
 		BiFunction<Integer, Flux<Integer>, Integer> fail = (t1, t2) -> {
 			throw new RuntimeException("Forced failure");
 		};
 
 		Flux<Integer> m =
-				source1.groupJoin(source2, just(Flux.never()), just(Flux.never()), fail);
+				source1.asFlux().groupJoin(source2.asFlux(), just(Flux.never()), just(Flux.never()), fail);
 		m.subscribe(ts);
 
-		source1.onNext(1);
-		source2.onNext(2);
+		source1.emitNext(1, FAIL_FAST);
+		source2.emitNext(2, FAIL_FAST);
 
 		ts.assertErrorMessage("Forced failure")
 		  .assertNotComplete()
 		  .assertNoValues();
+	}
+
+	@Test
+	public void scanOperator(){
+		Flux<Integer> source1 = Flux.just(1);
+		Flux<Integer> source2 = Flux.just(2);
+
+		FluxGroupJoin<Integer, Integer, Integer, Object, Flux<Integer>> test =
+				new FluxGroupJoin<>(source1, source2, just(Flux.never()), just2(Flux.never()), add2, Queues.unbounded(Queues.XS_BUFFER_SIZE), Queues.unbounded(Queues.XS_BUFFER_SIZE));
+
+		assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(source1);
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 	}
 
 	@Test
@@ -319,6 +333,7 @@ public class FluxGroupJoinTest {
 
 		assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(parent);
 		assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(sub);
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 		assertThat(test.scan(Scannable.Attr.CANCELLED)).isFalse();
 		test.dispose();
 		assertThat(test.scan(Scannable.Attr.CANCELLED)).isTrue();
@@ -339,6 +354,7 @@ public class FluxGroupJoinTest {
 		test.onSubscribe(sub);
 
 		assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(sub);
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 		assertThat(test.scan(Scannable.Attr.CANCELLED)).isFalse();
 		test.dispose();
 		assertThat(test.scan(Scannable.Attr.CANCELLED)).isTrue();

@@ -23,9 +23,11 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.Test;
 import org.reactivestreams.Subscription;
+
 import reactor.core.CoreSubscriber;
 import reactor.core.Scannable;
 import reactor.test.StepVerifier;
+import reactor.test.publisher.TestPublisher;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -253,13 +255,13 @@ public class FluxFilterWhenTest {
 
 	@Test
 	public void cancel() {
-		final EmitterProcessor<Boolean> pp = EmitterProcessor.create();
+		TestPublisher<Boolean> assertCompanion = TestPublisher.create();
 
 		StepVerifier.create(Flux.range(1, 5)
-		                        .filterWhen(v -> pp, 16))
+		                        .filterWhen(v -> assertCompanion.flux(), 16))
 		            .thenCancel();
 
-		assertThat(pp.hasDownstreams()).isFalse();
+		assertCompanion.assertNoSubscribers();
 	}
 
 	@Test
@@ -398,6 +400,15 @@ public class FluxFilterWhenTest {
 		assertThat(scannable.get().scan(Scannable.Attr.CANCELLED)).isEqualTo(true);
 	}
 
+	@Test
+	public void scanOperator(){
+		Flux<Integer> parent = Flux.just(1);
+		FluxFilterWhen<Integer> test = new FluxFilterWhen<>(parent, v -> Flux.just(true), 123);
+
+		assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
+	}
+
     @Test
     public void scanSubscriber() {
         CoreSubscriber<String> actual = new LambdaSubscriber<>(null, e -> {}, null, null);
@@ -414,6 +425,7 @@ public class FluxFilterWhenTest {
         assertThat(test.scan(Scannable.Attr.CAPACITY)).isEqualTo(1024); // next power of 2 of 789
         assertThat(test.scan(Scannable.Attr.BUFFERED)).isEqualTo(0);
         assertThat(test.scan(Scannable.Attr.PREFETCH)).isEqualTo(789);
+        assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 
         test.error = new IllegalStateException("boom");
         assertThat(test.scan(Scannable.Attr.ERROR)).hasMessage("boom");
@@ -454,6 +466,7 @@ public class FluxFilterWhenTest {
         assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(main);
         assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(sub);
         assertThat(test.scan(Scannable.Attr.REQUESTED_FROM_DOWNSTREAM)).isEqualTo(1L);
+        assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 
         assertThat(test.scan(Scannable.Attr.TERMINATED)).isFalse();
         test.onNext(false);

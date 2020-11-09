@@ -25,6 +25,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscription;
+
 import reactor.core.CoreSubscriber;
 import reactor.core.Fuseable;
 import reactor.core.Scannable;
@@ -36,7 +37,7 @@ import reactor.test.subscriber.AssertSubscriber;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static reactor.core.publisher.Sinks.EmitFailureHandler.FAIL_FAST;
 
 public class FluxTakeTest {
 
@@ -193,15 +194,16 @@ public class FluxTakeTest {
 
 	@Test
 	public void takeFusedBackpressured() {
-		UnicastProcessor<String> up = UnicastProcessor.create();
-		StepVerifier.create(up.take(3), 0)
+		Sinks.Many<String> up = Sinks.many().unicast().onBackpressureBuffer();
+		StepVerifier.create(up.asFlux()
+							  .take(3), 0)
 		            .expectFusion()
-		            .then(() -> up.onNext("test"))
-		            .then(() -> up.onNext("test2"))
+		            .then(() -> up.emitNext("test", FAIL_FAST))
+		            .then(() -> up.emitNext("test2", FAIL_FAST))
 		            .thenRequest(2)
 		            .expectNext("test", "test2")
-		            .then(() -> up.onNext("test3"))
-		            .then(() -> up.onNext("test4"))
+		            .then(() -> up.emitNext("test3", FAIL_FAST))
+		            .then(() -> up.emitNext("test4", FAIL_FAST))
 		            .thenRequest(1)
 		            .expectNext("test3")
 		            .thenRequest(1)
@@ -210,14 +212,15 @@ public class FluxTakeTest {
 
 	@Test
 	public void takeFusedBackpressuredCancelled() {
-		UnicastProcessor<String> up = UnicastProcessor.create();
-		StepVerifier.create(up.take(3).doOnSubscribe(s -> {
+		Sinks.Many<String> up = Sinks.many().unicast().onBackpressureBuffer();
+		StepVerifier.create(up.asFlux()
+							  .take(3).doOnSubscribe(s -> {
 			assertThat(((Fuseable.QueueSubscription)s).size()).isEqualTo(0);
 		}), 0)
 		            .expectFusion()
-		            .then(() -> up.onNext("test"))
-		            .then(() -> up.onNext("test"))
-		            .then(() -> up.onNext("test"))
+		            .then(() -> up.emitNext("test", FAIL_FAST))
+		            .then(() -> up.emitNext("test", FAIL_FAST))
+		            .then(() -> up.emitNext("test", FAIL_FAST))
 		            .thenRequest(2)
 		            .expectNext("test", "test")
 		            .thenCancel()
@@ -307,11 +310,11 @@ public class FluxTakeTest {
 
 	@Test
 	public void failNextIfTerminatedTakeFused() {
-		UnicastProcessor<Integer> up = UnicastProcessor.create();
+		TestPublisher<Integer> up = TestPublisher.createNoncompliant(TestPublisher.Violation.CLEANUP_ON_TERMINATE);
 		Hooks.onNextDropped(t -> assertThat(t).isEqualTo(1));
-		StepVerifier.create(up.take(2))
-		            .then(() -> up.actual.onComplete())
-		            .then(() -> up.actual.onNext(1))
+		StepVerifier.create(up.flux().take(2))
+		            .then(up::complete)
+		            .then(() -> up.next(1))
 		            .verifyComplete();
 		Hooks.resetOnNextDropped();
 	}
@@ -383,12 +386,13 @@ public class FluxTakeTest {
 
 	@Test
 	public void takeFusedAsync() {
-		UnicastProcessor<String> up = UnicastProcessor.create();
-		StepVerifier.create(up.take(2))
+		Sinks.Many<String> up = Sinks.many().unicast().onBackpressureBuffer();
+		StepVerifier.create(up.asFlux()
+							  .take(2))
 		            .expectFusion(Fuseable.ASYNC)
 		            .then(() -> {
-			            up.onNext("test");
-			            up.onNext("test2");
+			            up.emitNext("test", FAIL_FAST);
+			            up.emitNext("test2", FAIL_FAST);
 		            })
 		            .expectNext("test", "test2")
 		            .verifyComplete();
@@ -492,35 +496,37 @@ public class FluxTakeTest {
 	@Test
 	@SuppressWarnings("unchecked")
 	public void failFusedDoubleError() {
-		UnicastProcessor<Integer> up = UnicastProcessor.create();
+		Sinks.Many<Integer> up = Sinks.many().unicast().onBackpressureBuffer();
 		Hooks.onErrorDropped(e -> assertThat(e).hasMessage("test2"));
-		StepVerifier.create(up
-		                        .take(2))
+		StepVerifier.create(up.asFlux()
+							  .take(2))
 		            .consumeSubscriptionWith(s -> {
 			            assertTrackableBeforeOnSubscribe((InnerOperator)s);
 		            })
 		            .then(() -> {
-			            assertTrackableAfterOnSubscribe((InnerOperator)up.actual);
-			            up.actual.onError(new Exception("test"));
-			            assertTrackableAfterOnComplete((InnerOperator)up.actual);
-			            up.actual.onError(new Exception("test2"));
+		            	InnerOperator processorDownstream = (InnerOperator) Scannable.from(up).scan(Scannable.Attr.ACTUAL);
+			            assertTrackableAfterOnSubscribe(processorDownstream);
+			            processorDownstream.onError(new Exception("test"));
+			            assertTrackableAfterOnComplete(processorDownstream);
+			            processorDownstream.onError(new Exception("test2"));
 		            })
 		            .verifyErrorMessage("test");
 	}
 
 	@Test
 	public void ignoreFusedDoubleComplete() {
-		UnicastProcessor<Integer> up = UnicastProcessor.create();
-		StepVerifier.create(up
-		                        .take(2).filter(d -> true))
+		Sinks.Many<Integer> up = Sinks.many().unicast().onBackpressureBuffer();
+		StepVerifier.create(up.asFlux()
+							  .take(2).filter(d -> true))
 		            .consumeSubscriptionWith(s -> {
 			            assertTrackableAfterOnSubscribe((InnerOperator)s);
 		            })
 		            .then(() -> {
-			            assertTrackableAfterOnSubscribe((InnerOperator)up.actual);
-			            up.actual.onComplete();
-			            assertTrackableAfterOnComplete((InnerOperator)up.actual);
-			            up.actual.onComplete();
+			            InnerOperator processorDownstream = (InnerOperator) Scannable.from(up).scan(Scannable.Attr.ACTUAL);
+			            assertTrackableAfterOnSubscribe(processorDownstream);
+			            processorDownstream.onComplete();
+			            assertTrackableAfterOnComplete(processorDownstream);
+			            processorDownstream.onComplete();
 		            })
 		            .verifyComplete();
 	}
@@ -617,6 +623,24 @@ public class FluxTakeTest {
 	}
 
 	@Test
+	public void scanOperator(){
+		Flux<Integer> parent = Flux.just(1);
+		FluxTake<Integer> test = new FluxTake<>(parent, 3);
+
+		assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
+	}
+
+	@Test
+	public void scanFuseableOperator(){
+		Flux<Integer> parent = Flux.just(1);
+		FluxTakeFuseable<Integer> test = new FluxTakeFuseable<>(parent, 3);
+
+		assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
+	}
+
+	@Test
     public void scanSubscriber() {
         CoreSubscriber<Integer> actual = new LambdaSubscriber<>(null, e -> {}, null, null);
         FluxTake.TakeSubscriber<Integer> test = new FluxTake.TakeSubscriber<>(actual, 5);
@@ -625,6 +649,7 @@ public class FluxTakeTest {
 
         Assertions.assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
         Assertions.assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(actual);
+		Assertions.assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 
         Assertions.assertThat(test.scan(Scannable.Attr.TERMINATED)).isFalse();
         test.onComplete();
@@ -641,6 +666,7 @@ public class FluxTakeTest {
 
         Assertions.assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
         Assertions.assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(actual);
+		Assertions.assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 
         Assertions.assertThat(test.scan(Scannable.Attr.TERMINATED)).isFalse();
         test.onComplete();
@@ -656,6 +682,7 @@ public class FluxTakeTest {
 
         assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
         assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(actual);
+        assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 
         assertThat(test.scan(Scannable.Attr.TERMINATED)).isFalse();
         test.onError(new IllegalStateException("boom"));

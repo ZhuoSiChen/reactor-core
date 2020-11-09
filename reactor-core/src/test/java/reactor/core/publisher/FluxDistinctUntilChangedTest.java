@@ -26,6 +26,7 @@ import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.reactivestreams.Subscription;
+
 import reactor.core.CoreSubscriber;
 import reactor.core.Fuseable;
 import reactor.core.Scannable;
@@ -43,6 +44,7 @@ import reactor.test.subscriber.AssertSubscriber;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.awaitility.Awaitility.await;
+import static reactor.core.publisher.Sinks.EmitFailureHandler.FAIL_FAST;
 
 public class FluxDistinctUntilChangedTest extends FluxOperatorTest<String, String> {
 
@@ -234,18 +236,26 @@ public class FluxDistinctUntilChangedTest extends FluxOperatorTest<String, Strin
 
 	@Test
 	public void allDistinctConditional() {
-		DirectProcessor<Integer> dp = new DirectProcessor<>();
+		Sinks.Many<Integer> dp = Sinks.unsafe().many().multicast().directBestEffort();
 
-		AssertSubscriber<Integer> ts = dp.distinctUntilChanged()
+		AssertSubscriber<Integer> ts = dp.asFlux()
+										 .distinctUntilChanged()
 		                                 .filter(v -> true)
 		                                 .subscribeWith(AssertSubscriber.create());
 
-		dp.onNext(1);
-		dp.onNext(2);
-		dp.onNext(3);
-		dp.onComplete();
+		dp.emitNext(1, FAIL_FAST);
+		dp.emitNext(2, FAIL_FAST);
+		dp.emitNext(3, FAIL_FAST);
+		dp.emitComplete(FAIL_FAST);
 
 		ts.assertValues(1, 2, 3).assertComplete();
+	}
+
+	@Test
+	public void scanOperator(){
+	    FluxDistinctUntilChanged<Integer, Integer> test = new FluxDistinctUntilChanged<>(Flux.just(1), v -> v, (k1, k2) -> true);
+
+	    assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 	}
 
 	@Test
@@ -258,6 +268,7 @@ public class FluxDistinctUntilChangedTest extends FluxOperatorTest<String, Strin
 
 		assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
 		assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(actual);
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 
 		assertThat(test.scan(Scannable.Attr.TERMINATED)).isFalse();
 		test.onError(new IllegalStateException("boom"));
@@ -275,6 +286,7 @@ public class FluxDistinctUntilChangedTest extends FluxOperatorTest<String, Strin
 
 		assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
 		assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(actual);
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 
 		assertThat(test.scan(Scannable.Attr.TERMINATED)).isFalse();
 		test.onError(new IllegalStateException("boom"));

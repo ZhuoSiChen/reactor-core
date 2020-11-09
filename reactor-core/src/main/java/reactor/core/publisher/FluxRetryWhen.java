@@ -20,7 +20,6 @@ import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.stream.Stream;
 
 import org.reactivestreams.Publisher;
-import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
 
 import reactor.core.CorePublisher;
@@ -28,6 +27,7 @@ import reactor.core.CoreSubscriber;
 import reactor.core.Scannable;
 import reactor.util.annotation.Nullable;
 import reactor.util.context.Context;
+import reactor.util.context.ContextView;
 import reactor.util.retry.Retry;
 
 /**
@@ -53,14 +53,11 @@ final class FluxRetryWhen<T> extends InternalFluxOperator<T, T> {
 			Retry whenSourceFactory,
 			CorePublisher<? extends T> source) {
 		RetryWhenOtherSubscriber other = new RetryWhenOtherSubscriber();
-		Subscriber<Retry.RetrySignal> signaller = Operators.serialize(other.completionSignal);
-
-		signaller.onSubscribe(Operators.emptySubscription());
 
 		CoreSubscriber<T> serial = Operators.serialize(s);
 
 		RetryWhenMainSubscriber<T> main =
-				new RetryWhenMainSubscriber<>(serial, signaller, source);
+				new RetryWhenMainSubscriber<>(serial, other.completionSignal, source, whenSourceFactory.retryContext());
 
 		other.main = main;
 		serial.onSubscribe(main);
@@ -86,12 +83,18 @@ final class FluxRetryWhen<T> extends InternalFluxOperator<T, T> {
 		return null;
 	}
 
+	@Override
+	public Object scanUnsafe(Attr key) {
+		if (key == Attr.RUN_STYLE) return Attr.RunStyle.SYNC;
+		return super.scanUnsafe(key);
+	}
+
 	static final class RetryWhenMainSubscriber<T> extends Operators.MultiSubscriptionSubscriber<T, T>
 			implements Retry.RetrySignal {
 
 		final Operators.DeferredSubscription otherArbiter;
 
-		final Subscriber<Retry.RetrySignal> signaller;
+		final Sinks.Many<Retry.RetrySignal> signaller;
 
 		final CorePublisher<? extends T> source;
 
@@ -99,6 +102,7 @@ final class FluxRetryWhen<T> extends InternalFluxOperator<T, T> {
 		long subsequentFailureIndex = 0L;
 		@Nullable
 		Throwable lastFailure = null;
+		final ContextView retryContext;
 
 		Context context;
 
@@ -109,13 +113,15 @@ final class FluxRetryWhen<T> extends InternalFluxOperator<T, T> {
 		long produced;
 		
 		RetryWhenMainSubscriber(CoreSubscriber<? super T> actual,
-				Subscriber<Retry.RetrySignal> signaller,
-				CorePublisher<? extends T> source) {
+				Sinks.Many<Retry.RetrySignal> signaller,
+				CorePublisher<? extends T> source,
+				ContextView retryContext) {
 			super(actual);
 			this.signaller = signaller;
 			this.source = source;
 			this.otherArbiter = new Operators.DeferredSubscription();
 			this.context = actual.currentContext();
+			this.retryContext = retryContext;
 		}
 
 		@Override
@@ -132,6 +138,11 @@ final class FluxRetryWhen<T> extends InternalFluxOperator<T, T> {
 		public Throwable failure() {
 			assert this.lastFailure != null;
 			return this.lastFailure;
+		}
+
+		@Override
+		public ContextView retryContextView() {
+			return retryContext;
 		}
 
 		@Override
@@ -177,7 +188,7 @@ final class FluxRetryWhen<T> extends InternalFluxOperator<T, T> {
 
 			otherArbiter.request(1);
 
-			signaller.onNext(this);
+			signaller.emitNext(this, Sinks.EmitFailureHandler.FAIL_FAST);
 		}
 
 		@Override
@@ -197,8 +208,8 @@ final class FluxRetryWhen<T> extends InternalFluxOperator<T, T> {
 
 					//flow that emit a Context as a trigger for the re-subscription are
 					//used to REPLACE the currentContext()
-					if (trigger instanceof Context) {
-						this.context = this.context.putAll((Context) trigger);
+					if (trigger instanceof ContextView) {
+						this.context = this.context.putAll((ContextView) trigger);
 					}
 
 					source.subscribe(this);
@@ -218,13 +229,19 @@ final class FluxRetryWhen<T> extends InternalFluxOperator<T, T> {
 
 			actual.onComplete();
 		}
+
+		@Override
+		public Object scanUnsafe(Attr key) {
+			if (key == Attr.RUN_STYLE) return Attr.RunStyle.SYNC;
+			return super.scanUnsafe(key);
+		}
 	}
 
 	static final class RetryWhenOtherSubscriber extends Flux<Retry.RetrySignal>
 	implements InnerConsumer<Object>, OptimizableOperator<Retry.RetrySignal, Retry.RetrySignal> {
 		RetryWhenMainSubscriber<?> main;
 
-		final DirectProcessor<Retry.RetrySignal> completionSignal = new DirectProcessor<>();
+		final Sinks.Many<Retry.RetrySignal> completionSignal = Sinks.many().multicast().onBackpressureBuffer();
 
 		@Override
 		public Context currentContext() {
@@ -236,6 +253,7 @@ final class FluxRetryWhen<T> extends InternalFluxOperator<T, T> {
 		public Object scanUnsafe(Attr key) {
 			if (key == Attr.PARENT) return main.otherArbiter;
 			if (key == Attr.ACTUAL) return main;
+			if (key == Attr.RUN_STYLE) return Attr.RunStyle.SYNC;
 
 			return null;
 		}
@@ -262,7 +280,7 @@ final class FluxRetryWhen<T> extends InternalFluxOperator<T, T> {
 
 		@Override
 		public void subscribe(CoreSubscriber<? super Retry.RetrySignal> actual) {
-			completionSignal.subscribe(actual);
+			completionSignal.asFlux().subscribe(actual);
 		}
 
 		@Override
@@ -271,8 +289,8 @@ final class FluxRetryWhen<T> extends InternalFluxOperator<T, T> {
 		}
 
 		@Override
-		public DirectProcessor<Retry.RetrySignal> source() {
-			return completionSignal;
+		public CorePublisher<Retry.RetrySignal> source() {
+			return completionSignal.asFlux();
 		}
 
 		@Override

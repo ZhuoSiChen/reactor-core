@@ -18,6 +18,7 @@ package reactor.core.publisher;
 
 import org.junit.jupiter.api.Test;
 import org.reactivestreams.Subscription;
+
 import reactor.core.CoreSubscriber;
 import reactor.core.Scannable;
 import reactor.core.scheduler.Schedulers;
@@ -25,6 +26,7 @@ import reactor.test.subscriber.AssertSubscriber;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static reactor.core.publisher.Sinks.EmitFailureHandler.FAIL_FAST;
 
 public class FluxOnBackpressureLatestTest {
 
@@ -70,19 +72,19 @@ public class FluxOnBackpressureLatestTest {
 
 	@Test
 	public void backpressured() {
-		DirectProcessor<Integer> tp = DirectProcessor.create();
+		Sinks.Many<Integer> tp = Sinks.unsafe().many().multicast().directBestEffort();
 
 		AssertSubscriber<Integer> ts = AssertSubscriber.create(0);
 
-		tp.onBackpressureLatest().subscribe(ts);
+		tp.asFlux().onBackpressureLatest().subscribe(ts);
 
-		tp.onNext(1);
+		tp.emitNext(1, FAIL_FAST);
 
 		ts.assertNoValues()
 		  .assertNoError()
 		  .assertNotComplete();
 
-		tp.onNext(2);
+		tp.emitNext(2, FAIL_FAST);
 
 		ts.request(1);
 
@@ -90,8 +92,8 @@ public class FluxOnBackpressureLatestTest {
 		  .assertNoError()
 		  .assertNotComplete();
 
-		tp.onNext(3);
-		tp.onNext(4);
+		tp.emitNext(3, FAIL_FAST);
+		tp.emitNext(4, FAIL_FAST);
 
 		ts.request(2);
 
@@ -99,8 +101,8 @@ public class FluxOnBackpressureLatestTest {
 		  .assertNoError()
 		  .assertNotComplete();
 
-		tp.onNext(5);
-		tp.onComplete();
+		tp.emitNext(5, FAIL_FAST);
+		tp.emitComplete(FAIL_FAST);
 
 		ts.assertValues(2, 4, 5)
 		  .assertNoError()
@@ -109,13 +111,13 @@ public class FluxOnBackpressureLatestTest {
 
 	@Test
 	public void error() {
-		DirectProcessor<Integer> tp = DirectProcessor.create();
+		Sinks.Many<Integer> tp = Sinks.unsafe().many().multicast().directBestEffort();
 
 		AssertSubscriber<Integer> ts = AssertSubscriber.create(0);
 
-		tp.onBackpressureLatest().subscribe(ts);
+		tp.asFlux().onBackpressureLatest().subscribe(ts);
 
-		tp.onError(new RuntimeException("forced failure"));
+		tp.emitError(new RuntimeException("forced failure"), FAIL_FAST);
 
 		ts.assertNoValues()
 		  .assertNotComplete()
@@ -125,23 +127,24 @@ public class FluxOnBackpressureLatestTest {
 
 	@Test
 	public void backpressureWithDrop() {
-		DirectProcessor<Integer> tp = DirectProcessor.create();
+		Sinks.Many<Integer> tp = Sinks.unsafe().many().multicast().directBestEffort();
 
 		AssertSubscriber<Integer> ts = new AssertSubscriber<Integer>(0) {
 			@Override
 			public void onNext(Integer t) {
 				super.onNext(t);
 				if (t == 2) {
-					tp.onNext(3);
+					tp.emitNext(3, FAIL_FAST);
 				}
 			}
 		};
 
-		tp.onBackpressureLatest()
+		tp.asFlux()
+		  .onBackpressureLatest()
 		  .subscribe(ts);
 
-		tp.onNext(1);
-		tp.onNext(2);
+		tp.emitNext(1, FAIL_FAST);
+		tp.emitNext(2, FAIL_FAST);
 
 		ts.request(1);
 
@@ -149,6 +152,15 @@ public class FluxOnBackpressureLatestTest {
 		  .assertNoError()
 		  .assertNotComplete();
 
+	}
+
+	@Test
+	public void scanOperator(){
+		Flux<Integer> parent = Flux.just(1);
+		FluxOnBackpressureLatest<Integer> test = new FluxOnBackpressureLatest<>(parent);
+
+		assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 	}
 
 	@Test
@@ -161,6 +173,7 @@ public class FluxOnBackpressureLatestTest {
 
         assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(actual);
         assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
+        assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
         test.requested = 35;
         assertThat(test.scan(Scannable.Attr.REQUESTED_FROM_DOWNSTREAM)).isEqualTo(35);
         assertThat(test.scan(Scannable.Attr.PREFETCH)).isEqualTo(Integer.MAX_VALUE);

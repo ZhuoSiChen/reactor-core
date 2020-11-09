@@ -19,11 +19,13 @@ package reactor.core.publisher;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
+import reactor.core.Scannable;
 import reactor.test.subscriber.AssertSubscriber;
 import reactor.util.context.Context;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class FluxDeferTest {
 
@@ -86,16 +88,23 @@ public class FluxDeferTest {
 	@Test
 	public void deferFluxWithContext() {
 		Flux<Integer> source = Flux
-				.deferWithContext(ctx -> {
+				.deferContextual(ctx -> {
 					AtomicInteger i = ctx.get("i");
 					return Mono.just(i.incrementAndGet());
 				})
-				.subscriberContext(Context.of(
+				.contextWrite(Context.of(
 						"i", new AtomicInteger()
 				));
 
 		assertThat(source.blockLast().intValue()).isEqualTo(1);
 		assertThat(source.blockLast().intValue()).isEqualTo(2);
 		assertThat(source.blockLast().intValue()).isEqualTo(3);
+	}
+
+	@Test
+	public void scanOperator(){
+	    FluxDefer<Integer> test = new FluxDefer<>(() -> Flux.just(1));
+
+	    assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 	}
 }

@@ -21,10 +21,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
+import reactor.core.Scannable;
 import reactor.test.StepVerifier;
 import reactor.test.subscriber.AssertSubscriber;
 
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class MonoRepeatTest {
 
@@ -133,5 +135,12 @@ public class MonoRepeatTest {
 		ts.assertValues(1, 2, 3, 4, 5, 6, 7, 8, 9)
 		  .assertComplete()
 		  .assertNoError();
+	}
+
+	@Test
+	public void scanOperator(){
+	    MonoRepeat<Integer> test = new MonoRepeat<>(Mono.just(1), 5L);
+
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 	}
 }

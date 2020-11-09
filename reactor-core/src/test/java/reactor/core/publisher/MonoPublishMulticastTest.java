@@ -23,6 +23,7 @@ import org.reactivestreams.Subscription;
 import reactor.core.CoreSubscriber;
 import reactor.core.Scannable;
 import reactor.test.StepVerifier;
+import reactor.test.publisher.TestPublisher;
 import reactor.test.subscriber.AssertSubscriber;
 import reactor.util.context.Context;
 
@@ -66,28 +67,33 @@ public class MonoPublishMulticastTest {
 	public void cancelComposes() {
 		AssertSubscriber<Integer> ts = AssertSubscriber.create();
 
-		MonoProcessor<Integer> sp = MonoProcessor.create();
+		TestPublisher<Integer> testPublisher = TestPublisher.create();
 
-		sp.publish(o -> Mono.<Integer>never())
-		  .subscribe(ts);
+		testPublisher.mono()
+		             .publish(o -> Mono.<Integer>never())
+		             .subscribe(ts);
 
-		assertThat(sp.downstreamCount() != 0).as("Not subscribed?").isTrue();
+		testPublisher.assertNotCancelled()
+		             .assertSubscribers();
 
 		ts.cancel();
 
-		assertThat(sp.isCancelled()).as("Still subscribed?").isFalse();
+		testPublisher.assertNoSubscribers()
+		             .assertCancelled();
 	}
 
 	@Test
 	public void cancelComposes2() {
 		AssertSubscriber<Integer> ts = AssertSubscriber.create();
 
-		MonoProcessor<Integer> sp = MonoProcessor.create();
+		TestPublisher<Integer> testPublisher = TestPublisher.create();
 
-		sp.publish(o -> Mono.<Integer>empty())
-		  .subscribe(ts);
+		testPublisher.mono()
+		             .publish(o -> Mono.<Integer>empty())
+		             .subscribe(ts);
 
-		assertThat(sp.isCancelled()).as("Still subscribed?").isFalse();
+		testPublisher.assertCancelled()
+		             .assertNoSubscribers();
 	}
 
 	@Test
@@ -138,6 +144,7 @@ public class MonoPublishMulticastTest {
 
 		assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
 		assertThat(test.scan(Scannable.Attr.PREFETCH)).isEqualTo(1);
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 		assertThat(test.scan(Scannable.Attr.BUFFERED)).isEqualTo(0);
 		test.value = 1;
 		assertThat(test.scan(Scannable.Attr.BUFFERED)).isEqualTo(1);
@@ -164,6 +171,7 @@ public class MonoPublishMulticastTest {
 
 		assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
 		assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(actual);
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 		test.request(789);
 		//does not track request in the Mono version
 		assertThat(test.scan(Scannable.Attr.REQUESTED_FROM_DOWNSTREAM)).isEqualTo(0);

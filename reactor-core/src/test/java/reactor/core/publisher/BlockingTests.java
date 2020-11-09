@@ -41,6 +41,8 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static reactor.core.publisher.Flux.range;
 
+import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
+import static org.assertj.core.api.AssertionsForClassTypes.*;
 
 public class BlockingTests {
 
@@ -74,9 +76,17 @@ public class BlockingTests {
 	}
 
 	@Test
-	public void blockingFirstTimeout() {
+	public void blockingFirstEarlyComplete() {
 		assertThat(Flux.empty()
 		               .blockFirst(Duration.ofMillis(1))).isNull();
+	}
+
+	@Test
+	public void blockingFirstTimeout() {
+		assertThatIllegalStateException().isThrownBy(() ->
+				Flux.just(1).delayElements(Duration.ofSeconds(1))
+				.blockFirst(Duration.ofMillis(1)))
+			.withMessage("Timeout on blocking read for 1000000 NANOSECONDS");
 	}
 
 	@Test
@@ -94,10 +104,19 @@ public class BlockingTests {
 	}
 
 	@Test
-	public void blockingLastTimeout() {
+	public void blockingLastEarlyComplete() {
 		assertThat(Flux.empty()
 		               .blockLast(Duration.ofMillis(1))).isNull();
 	}
+
+	@Test
+	public void blockingLastTimeout() {
+		assertThatIllegalStateException().isThrownBy(() ->
+				Flux.just(1).delayElements(Duration.ofMillis(100))
+						.blockLast(Duration.ofNanos(50)))
+				.withMessage("Timeout on blocking read for 50 NANOSECONDS");
+	}
+
 
 	@Test
 	public void blockingFirstError() {
@@ -240,6 +259,12 @@ public class BlockingTests {
 	        .blockOptional();
 
 		assertThat(cancelCount).hasValue(0);
+	}
+
+	@Test
+	public void monoBlockSupportsNanos() {
+		assertThatIllegalStateException().isThrownBy(() -> Mono.never().block(Duration.ofNanos(9_000L)))
+				.withMessage("Timeout on blocking read for 9000 NANOSECONDS");
 	}
 
 	@Test

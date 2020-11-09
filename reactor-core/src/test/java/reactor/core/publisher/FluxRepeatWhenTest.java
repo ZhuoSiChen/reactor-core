@@ -26,12 +26,13 @@ import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.Test;
 import org.reactivestreams.Subscription;
+
 import reactor.core.CoreSubscriber;
 import reactor.core.Scannable;
 import reactor.test.StepVerifier;
 import reactor.test.subscriber.AssertSubscriber;
 import reactor.util.context.Context;
-import reactor.util.function.Tuples;
+import reactor.util.context.ContextView;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
@@ -374,6 +375,15 @@ public class FluxRepeatWhenTest {
 	}
 
 	@Test
+	public void scanOperator(){
+		Flux<Integer> parent = Flux.just(1);
+		FluxRepeatWhen<Integer> test = new FluxRepeatWhen<>(parent, c -> c.take(3));
+
+		assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
+	}
+
+	@Test
     public void scanMainSubscriber() {
         CoreSubscriber<Integer> actual = new LambdaSubscriber<>(null, e -> {}, null, null);
         FluxRepeatWhen.RepeatWhenMainSubscriber<Integer> test =
@@ -383,6 +393,7 @@ public class FluxRepeatWhenTest {
 
         assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
         assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(actual);
+        assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
         test.requested = 35;
         assertThat(test.scan(Scannable.Attr.REQUESTED_FROM_DOWNSTREAM)).isEqualTo(35L);
 
@@ -401,12 +412,13 @@ public class FluxRepeatWhenTest {
 
         assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(main.otherArbiter);
         assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(main);
+        assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
     }
 
 	@Test
 	public void inners() {
 		CoreSubscriber<Integer> actual = new LambdaSubscriber<>(null, e -> {}, null, null);
-		CoreSubscriber<Long> signaller = new LambdaSubscriber<>(null, e -> {}, null, null);
+		Sinks.Many<Long> signaller = Sinks.unsafe().many().multicast().directBestEffort();
 		Flux<Integer> when = Flux.empty();
 		FluxRepeatWhen.RepeatWhenMainSubscriber<Integer> main = new FluxRepeatWhen.RepeatWhenMainSubscriber<>(actual, signaller, when);
 
@@ -419,13 +431,13 @@ public class FluxRepeatWhenTest {
 	public void repeatWhenContextTrigger_MergesOriginalContext() {
 		final int REPEAT_COUNT = 3;
 		List<String> repeats = Collections.synchronizedList(new ArrayList<>(4));
-		List<Context> contexts = Collections.synchronizedList(new ArrayList<>(4));
+		List<ContextView> contexts = Collections.synchronizedList(new ArrayList<>(4));
 
 		Flux<String> retryWithContext =
 				Flux.just("A", "B")
 				    .doOnEach(sig -> {
 				    	if (sig.isOnComplete()) {
-						    Context ctx = sig.getContext();
+						    ContextView ctx = sig.getContextView();
 						    contexts.add(ctx);
 						    repeats.add("emitted " + ctx.get("emitted") + " elements this attempt, " + ctx.get("repeatsLeft") + " repeats left");
 					    }
@@ -443,8 +455,8 @@ public class FluxRepeatWhenTest {
 					        sink.error(new IllegalStateException("repeats exhausted"));
 					    }
 				    }))
-				    .subscriberContext(Context.of("repeatsLeft", REPEAT_COUNT, "emitted", 0))
-				    .subscriberContext(Context.of("thirdPartyContext", "present"));
+				    .contextWrite(Context.of("repeatsLeft", REPEAT_COUNT, "emitted", 0))
+				    .contextWrite(Context.of("thirdPartyContext", "present"));
 
 		StepVerifier.create(retryWithContext)
 		            .expectNext("A", "B")

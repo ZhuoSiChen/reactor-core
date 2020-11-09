@@ -37,17 +37,20 @@ configurations {
 dependencies {
     api project(":reactor-core")
 
+    compileOnly "com.google.code.findbugs:jsr305:${findbugsVersion}"
+    compileOnly "com.google.code.findbugs:annotations:${findbugsVersion}"
+
     shaded 'net.bytebuddy:byte-buddy-agent:1.10.9'
     shaded 'net.bytebuddy:byte-buddy:1.10.9'
     for (dependency in project.configurations.shaded.dependencies) {
         compileOnly(dependency)
-        testRuntime(dependency)
-        javaAgentTestRuntime(dependency)
+        testRuntimeOnly(dependency)
+        javaAgentTestRuntimeOnly(dependency)
     }
 
     testImplementation platform("org.junit:junit-bom:${jUnitPlatformVersion}")
     testImplementation "org.junit.jupiter:junit-jupiter-api"
-    testRuntime "org.junit.jupiter:junit-jupiter-engine"
+    testRuntimeOnly "org.junit.jupiter:junit-jupiter-engine"
 
     testImplementation "org.assertj:assertj-core:$assertJVersion"
     testImplementation 'cglib:cglib:3.3.0'
@@ -99,7 +102,7 @@ shadowJar {
                     .toSet()
 
             // Exclude every compile-scoped dependency (including the transitive ones)
-            for (id in project.configurations.compile.resolvedConfiguration.resolvedArtifacts*.moduleVersion*.id) {
+            for (id in project.configurations.compileClasspath.resolvedConfiguration.resolvedArtifacts*.moduleVersion*.id) {
                 def module = "${id.group}:${id.name}".toString()
                 if (!shadedDependencies.contains(module)) {
                     project.configurations.shaded.exclude(group: id.group, module: id.name)

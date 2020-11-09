@@ -17,10 +17,13 @@
 package reactor.core.publisher;
 
 import org.junit.jupiter.api.Test;
+import reactor.core.Scannable;
 import reactor.test.StepVerifier;
 import reactor.test.subscriber.AssertSubscriber;
 
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class MonoDefaultIfEmptyTest {
 
@@ -170,6 +173,13 @@ public class MonoDefaultIfEmptyTest {
 		  .assertComplete()
 		  .assertNoError();
 
+	}
+
+	@Test
+	public void scanOperator() {
+		MonoDefaultIfEmpty<Integer> test = new MonoDefaultIfEmpty<>(Mono.empty(), 10);
+
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 	}
 
 }

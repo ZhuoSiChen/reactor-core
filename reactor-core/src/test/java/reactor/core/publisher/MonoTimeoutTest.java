@@ -19,9 +19,14 @@ import java.time.Duration;
 import java.util.concurrent.TimeoutException;
 
 import org.junit.jupiter.api.Test;
+
+import reactor.core.Scannable;
 import reactor.test.StepVerifier;
 import reactor.test.publisher.TestPublisher;
 import reactor.test.subscriber.AssertSubscriber;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static reactor.core.publisher.Sinks.EmitFailureHandler.FAIL_FAST;
 
 public class MonoTimeoutTest {
 
@@ -79,17 +84,17 @@ public class MonoTimeoutTest {
 	public void timeoutRequested() {
 		AssertSubscriber<Integer> ts = AssertSubscriber.create();
 
-		MonoProcessor<Integer> source = MonoProcessor.create();
+		Sinks.One<Integer> source = Sinks.unsafe().one();
 
-		DirectProcessor<Integer> tp = DirectProcessor.create();
+		Sinks.Many<Integer> tp = Sinks.unsafe().many().multicast().directBestEffort();
 
-		source.timeout(tp)
+		source.asMono()
+		      .timeout(tp.asFlux())
 		      .subscribe(ts);
 
-		tp.onNext(1);
+		tp.emitNext(1, FAIL_FAST);
 
-		source.onNext(2);
-		source.onComplete();
+		source.emitValue(2, FAIL_FAST);
 
 		ts.assertNoValues()
 		  .assertError(TimeoutException.class)
@@ -166,5 +171,12 @@ public class MonoTimeoutTest {
 				            "first signal from a Publisher in 'source(MonoNever)' " +
 				            "(and no fallback has been configured)")
 		            .verify();
+	}
+
+	@Test
+	public void scanOperator(){
+	    MonoTimeout<Integer, String, String> test = new MonoTimeout<>(Mono.just(1), Mono.just("foo"), "timeout");
+
+	    assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 	}
 }

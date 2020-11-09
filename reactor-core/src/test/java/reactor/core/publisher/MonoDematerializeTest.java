@@ -18,11 +18,13 @@ package reactor.core.publisher;
 import org.junit.jupiter.api.Test;
 import java.time.Duration;
 
-
+import reactor.core.Scannable;
 import reactor.test.StepVerifier;
 import reactor.test.publisher.PublisherProbe;
 import reactor.test.publisher.TestPublisher;
 import reactor.test.subscriber.AssertSubscriber;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class MonoDematerializeTest {
 
@@ -178,7 +180,7 @@ public class MonoDematerializeTest {
 		            .expectNext("foo")
 		            .verifyComplete();
 
-		testPublisher.assertWasCancelled();
+		testPublisher.assertWasNotCancelled(); //new behavior as of 3.4.0 for MonoMaterialize
 	}
 
 	@Test
@@ -209,5 +211,12 @@ public class MonoDematerializeTest {
 	public void materializeDematerializeMonoError() {
 		StepVerifier.create(Mono.error(new IllegalStateException("boom")).materialize().dematerialize())
 		            .verifyErrorMessage("boom");
+	}
+
+	@Test
+	public void scanOperator(){
+	    MonoDematerialize<Integer> test = new MonoDematerialize<>(Mono.just(Signal.next(1)));
+
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 	}
 }

@@ -53,6 +53,7 @@ import reactor.util.context.Context;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
+import static reactor.core.publisher.Sinks.EmitFailureHandler.FAIL_FAST;
 
 public class FluxBufferPredicateTest {
 
@@ -61,32 +62,32 @@ public class FluxBufferPredicateTest {
 	@Test
 	@SuppressWarnings("unchecked")
 	public void normalUntil() {
-		DirectProcessor<Integer> sp1 = DirectProcessor.create();
+		Sinks.Many<Integer> sp1 = Sinks.unsafe().many().multicast().directBestEffort();
 		FluxBufferPredicate<Integer, List<Integer>> bufferUntil = new FluxBufferPredicate<>(
-				sp1, i -> i % 3 == 0, Flux.listSupplier(), FluxBufferPredicate.Mode.UNTIL);
+				sp1.asFlux(), i -> i % 3 == 0, Flux.listSupplier(), FluxBufferPredicate.Mode.UNTIL);
 
 		StepVerifier.create(bufferUntil)
 				.expectSubscription()
 				.expectNoEvent(Duration.ofMillis(10))
-				.then(() -> sp1.onNext(1))
-				.then(() -> sp1.onNext(2))
+				.then(() -> sp1.emitNext(1, FAIL_FAST))
+				.then(() -> sp1.emitNext(2, FAIL_FAST))
 				.expectNoEvent(Duration.ofMillis(10))
-				.then(() -> sp1.onNext(3))
+				.then(() -> sp1.emitNext(3, FAIL_FAST))
 				.expectNext(Arrays.asList(1, 2, 3))
 				.expectNoEvent(Duration.ofMillis(10))
-				.then(() -> sp1.onNext(4))
-				.then(() -> sp1.onNext(5))
+				.then(() -> sp1.emitNext(4, FAIL_FAST))
+				.then(() -> sp1.emitNext(5, FAIL_FAST))
 				.expectNoEvent(Duration.ofMillis(10))
-				.then(() -> sp1.onNext(6))
+				.then(() -> sp1.emitNext(6, FAIL_FAST))
 				.expectNext(Arrays.asList(4, 5, 6))
 				.expectNoEvent(Duration.ofMillis(10))
-				.then(() -> sp1.onNext(7))
-				.then(() -> sp1.onNext(8))
-				.then(sp1::onComplete)
+				.then(() -> sp1.emitNext(7, FAIL_FAST))
+				.then(() -> sp1.emitNext(8, FAIL_FAST))
+				.then(() -> sp1.emitComplete(FAIL_FAST))
 				.expectNext(Arrays.asList(7, 8))
 				.expectComplete()
 				.verify();
-		assertThat(sp1.hasDownstreams()).isFalse();
+		assertThat(sp1.currentSubscriberCount()).as("sp1 has subscriber").isZero();
 	}
 
 	@Test
@@ -125,29 +126,29 @@ public class FluxBufferPredicateTest {
 	@Test
 	@SuppressWarnings("unchecked")
 	public void mainErrorUntil() {
-		DirectProcessor<Integer> sp1 = DirectProcessor.create();
+		Sinks.Many<Integer> sp1 = Sinks.unsafe().many().multicast().directBestEffort();
 		FluxBufferPredicate<Integer, List<Integer>> bufferUntil = new FluxBufferPredicate<>(
-				sp1, i -> i % 3 == 0, Flux.listSupplier(), FluxBufferPredicate.Mode.UNTIL);
+				sp1.asFlux(), i -> i % 3 == 0, Flux.listSupplier(), FluxBufferPredicate.Mode.UNTIL);
 
 		StepVerifier.create(bufferUntil)
 		            .expectSubscription()
-		            .then(() -> sp1.onNext(1))
-		            .then(() -> sp1.onNext(2))
-		            .then(() -> sp1.onNext(3))
+		            .then(() -> sp1.emitNext(1, FAIL_FAST))
+		            .then(() -> sp1.emitNext(2, FAIL_FAST))
+		            .then(() -> sp1.emitNext(3, FAIL_FAST))
 		            .expectNext(Arrays.asList(1, 2, 3))
-		            .then(() -> sp1.onNext(4))
-		            .then(() -> sp1.onError(new RuntimeException("forced failure")))
+		            .then(() -> sp1.emitNext(4, FAIL_FAST))
+		            .then(() -> sp1.emitError(new RuntimeException("forced failure"), FAIL_FAST))
 		            .expectErrorMessage("forced failure")
 		            .verify();
-		assertThat(sp1.hasDownstreams()).isFalse();
+		assertThat(sp1.currentSubscriberCount()).as("sp1 has subscriber").isZero();
 	}
 
 	@Test
 	@SuppressWarnings("unchecked")
 	public void predicateErrorUntil() {
-		DirectProcessor<Integer> sp1 = DirectProcessor.create();
+		Sinks.Many<Integer> sp1 = Sinks.unsafe().many().multicast().directBestEffort();
 		FluxBufferPredicate<Integer, List<Integer>> bufferUntil = new FluxBufferPredicate<>(
-				sp1,
+				sp1.asFlux(),
 				i -> {
 					if (i == 5) throw new IllegalStateException("predicate failure");
 					return i % 3 == 0;
@@ -155,74 +156,75 @@ public class FluxBufferPredicateTest {
 
 		StepVerifier.create(bufferUntil)
 					.expectSubscription()
-					.then(() -> sp1.onNext(1))
-					.then(() -> sp1.onNext(2))
-					.then(() -> sp1.onNext(3))
+					.then(() -> sp1.emitNext(1, FAIL_FAST))
+					.then(() -> sp1.emitNext(2, FAIL_FAST))
+					.then(() -> sp1.emitNext(3, FAIL_FAST))
 					.expectNext(Arrays.asList(1, 2, 3))
-					.then(() -> sp1.onNext(4))
-					.then(() -> sp1.onNext(5))
+					.then(() -> sp1.emitNext(4, FAIL_FAST))
+					.then(() -> sp1.emitNext(5, FAIL_FAST))
 					.expectErrorMessage("predicate failure")
 					.verify();
-		assertThat(sp1.hasDownstreams()).isFalse();
+		assertThat(sp1.currentSubscriberCount()).as("sp1 has subscriber").isZero();
 	}
+
 	@Test
 	@SuppressWarnings("unchecked")
 	public void normalUntilOther() {
-		DirectProcessor<Integer> sp1 = DirectProcessor.create();
+		Sinks.Many<Integer> sp1 = Sinks.unsafe().many().multicast().directBestEffort();
 		FluxBufferPredicate<Integer, List<Integer>> bufferUntilOther = new FluxBufferPredicate<>(
-				sp1, i -> i % 3 == 0, Flux.listSupplier(), FluxBufferPredicate.Mode.UNTIL_CUT_BEFORE);
+				sp1.asFlux(), i -> i % 3 == 0, Flux.listSupplier(), FluxBufferPredicate.Mode.UNTIL_CUT_BEFORE);
 
 		StepVerifier.create(bufferUntilOther)
 				.expectSubscription()
 				.expectNoEvent(Duration.ofMillis(10))
-				.then(() -> sp1.onNext(1))
-				.then(() -> sp1.onNext(2))
+				.then(() -> sp1.emitNext(1, FAIL_FAST))
+				.then(() -> sp1.emitNext(2, FAIL_FAST))
 				.expectNoEvent(Duration.ofMillis(10))
-				.then(() -> sp1.onNext(3))
+				.then(() -> sp1.emitNext(3, FAIL_FAST))
 				.expectNext(Arrays.asList(1, 2))
 				.expectNoEvent(Duration.ofMillis(10))
-				.then(() -> sp1.onNext(4))
-				.then(() -> sp1.onNext(5))
+				.then(() -> sp1.emitNext(4, FAIL_FAST))
+				.then(() -> sp1.emitNext(5, FAIL_FAST))
 				.expectNoEvent(Duration.ofMillis(10))
-				.then(() -> sp1.onNext(6))
+				.then(() -> sp1.emitNext(6, FAIL_FAST))
 				.expectNext(Arrays.asList(3, 4, 5))
 				.expectNoEvent(Duration.ofMillis(10))
-				.then(() -> sp1.onNext(7))
-				.then(() -> sp1.onNext(8))
-				.then(sp1::onComplete)
+				.then(() -> sp1.emitNext(7, FAIL_FAST))
+				.then(() -> sp1.emitNext(8, FAIL_FAST))
+				.then(() -> sp1.emitComplete(FAIL_FAST))
 				.expectNext(Arrays.asList(6, 7, 8))
 				.expectComplete()
 				.verify();
-		assertThat(sp1.hasDownstreams()).isFalse();
+		assertThat(sp1.currentSubscriberCount()).as("sp1 has subscriber").isZero();
 	}
 
 	@Test
 	@SuppressWarnings("unchecked")
 	public void mainErrorUntilOther() {
-		DirectProcessor<Integer> sp1 = DirectProcessor.create();
+		Sinks.Many<Integer> sp1 = Sinks.unsafe().many().multicast().directBestEffort();
 		FluxBufferPredicate<Integer, List<Integer>> bufferUntilOther =
-				new FluxBufferPredicate<>(sp1, i -> i % 3 == 0, Flux.listSupplier(),
+				new FluxBufferPredicate<>(sp1.asFlux(), i -> i % 3 == 0, Flux.listSupplier(),
 						FluxBufferPredicate.Mode.UNTIL_CUT_BEFORE);
 
 		StepVerifier.create(bufferUntilOther)
 		            .expectSubscription()
-		            .then(() -> sp1.onNext(1))
-		            .then(() -> sp1.onNext(2))
-		            .then(() -> sp1.onNext(3))
+		            .then(() -> sp1.emitNext(1, FAIL_FAST))
+		            .then(() -> sp1.emitNext(2, FAIL_FAST))
+		            .then(() -> sp1.emitNext(3, FAIL_FAST))
 		            .expectNext(Arrays.asList(1, 2))
-		            .then(() -> sp1.onNext(4))
-		            .then(() -> sp1.onError(new RuntimeException("forced failure")))
+		            .then(() -> sp1.emitNext(4, FAIL_FAST))
+		            .then(() -> sp1.emitError(new RuntimeException("forced failure"), FAIL_FAST))
 		            .expectErrorMessage("forced failure")
 		            .verify();
-		assertThat(sp1.hasDownstreams()).isFalse();
+		assertThat(sp1.currentSubscriberCount()).as("sp1 has subscriber").isZero();
 	}
 
 	@Test
 	@SuppressWarnings("unchecked")
 	public void predicateErrorUntilOther() {
-		DirectProcessor<Integer> sp1 = DirectProcessor.create();
+		Sinks.Many<Integer> sp1 = Sinks.unsafe().many().multicast().directBestEffort();
 		FluxBufferPredicate<Integer, List<Integer>> bufferUntilOther =
-				new FluxBufferPredicate<>(sp1,
+				new FluxBufferPredicate<>(sp1.asFlux(),
 				i -> {
 					if (i == 5) throw new IllegalStateException("predicate failure");
 					return i % 3 == 0;
@@ -230,15 +232,15 @@ public class FluxBufferPredicateTest {
 
 		StepVerifier.create(bufferUntilOther)
 					.expectSubscription()
-					.then(() -> sp1.onNext(1))
-					.then(() -> sp1.onNext(2))
-					.then(() -> sp1.onNext(3))
+					.then(() -> sp1.emitNext(1, FAIL_FAST))
+					.then(() -> sp1.emitNext(2, FAIL_FAST))
+					.then(() -> sp1.emitNext(3, FAIL_FAST))
 					.expectNext(Arrays.asList(1, 2))
-					.then(() -> sp1.onNext(4))
-					.then(() -> sp1.onNext(5))
+					.then(() -> sp1.emitNext(4, FAIL_FAST))
+					.then(() -> sp1.emitNext(5, FAIL_FAST))
 					.expectErrorMessage("predicate failure")
 					.verify();
-		assertThat(sp1.hasDownstreams()).isFalse();
+		assertThat(sp1.currentSubscriberCount()).as("sp1 has subscriber").isZero();
 	}
 
 	@Test
@@ -373,118 +375,118 @@ public class FluxBufferPredicateTest {
 	@Test
 	@SuppressWarnings("unchecked")
 	public void normalWhile() {
-		DirectProcessor<Integer> sp1 = DirectProcessor.create();
+		Sinks.Many<Integer> sp1 = Sinks.unsafe().many().multicast().directBestEffort();
 		FluxBufferPredicate<Integer, List<Integer>> bufferWhile = new FluxBufferPredicate<>(
-				sp1, i -> i % 3 != 0, Flux.listSupplier(),
+				sp1.asFlux(), i -> i % 3 != 0, Flux.listSupplier(),
 				FluxBufferPredicate.Mode.WHILE);
 
 		StepVerifier.create(bufferWhile)
 				.expectSubscription()
 				.expectNoEvent(Duration.ofMillis(10))
-				.then(() -> sp1.onNext(1))
-				.then(() -> sp1.onNext(2))
+				.then(() -> sp1.emitNext(1, FAIL_FAST))
+				.then(() -> sp1.emitNext(2, FAIL_FAST))
 				.expectNoEvent(Duration.ofMillis(10))
-				.then(() -> sp1.onNext(3))
+				.then(() -> sp1.emitNext(3, FAIL_FAST))
 				.expectNext(Arrays.asList(1, 2))
 				.expectNoEvent(Duration.ofMillis(10))
-				.then(() -> sp1.onNext(4))
-				.then(() -> sp1.onNext(5))
+				.then(() -> sp1.emitNext(4, FAIL_FAST))
+				.then(() -> sp1.emitNext(5, FAIL_FAST))
 				.expectNoEvent(Duration.ofMillis(10))
-				.then(() -> sp1.onNext(6))
+				.then(() -> sp1.emitNext(6, FAIL_FAST))
 				.expectNext(Arrays.asList(4, 5))
 				.expectNoEvent(Duration.ofMillis(10))
-				.then(() -> sp1.onNext(7))
-				.then(() -> sp1.onNext(8))
-				.then(sp1::onComplete)
+				.then(() -> sp1.emitNext(7, FAIL_FAST))
+				.then(() -> sp1.emitNext(8, FAIL_FAST))
+				.then(() -> sp1.emitComplete(FAIL_FAST))
 				.expectNext(Arrays.asList(7, 8))
 				.expectComplete()
 				.verify();
-		assertThat(sp1.hasDownstreams()).isFalse();
+		assertThat(sp1.currentSubscriberCount()).as("sp1 has subscriber").isZero();
 	}
 
 	@Test
 	@SuppressWarnings("unchecked")
 	public void normalWhileDoesntInitiallyMatch() {
-		DirectProcessor<Integer> sp1 = DirectProcessor.create();
+		Sinks.Many<Integer> sp1 = Sinks.unsafe().many().multicast().directBestEffort();
 		FluxBufferPredicate<Integer, List<Integer>> bufferWhile = new FluxBufferPredicate<>(
-				sp1, i -> i % 3 == 0, Flux.listSupplier(), FluxBufferPredicate.Mode.WHILE);
+				sp1.asFlux(), i -> i % 3 == 0, Flux.listSupplier(), FluxBufferPredicate.Mode.WHILE);
 
 		StepVerifier.create(bufferWhile)
-				.expectSubscription()
-				.expectNoEvent(Duration.ofMillis(10))
-				.then(() -> sp1.onNext(1))
-				.then(() -> sp1.onNext(2))
-				.then(() -> sp1.onNext(3))
-				.expectNoEvent(Duration.ofMillis(10))
-				.then(() -> sp1.onNext(4))
-				.expectNext(Arrays.asList(3)) //emission of 4 triggers the buffer emit
-				.then(() -> sp1.onNext(5))
-				.then(() -> sp1.onNext(6))
-				.expectNoEvent(Duration.ofMillis(10))
-				.then(() -> sp1.onNext(7)) // emission of 7 triggers the buffer emit
-				.expectNext(Arrays.asList(6))
-				.then(() -> sp1.onNext(8))
-				.then(() -> sp1.onNext(9))
-				.expectNoEvent(Duration.ofMillis(10))
-				.then(sp1::onComplete) // completion triggers the buffer emit
-			    .expectNext(Collections.singletonList(9))
-				.expectComplete()
-				.verify(Duration.ofSeconds(1));
-		assertThat(sp1.hasDownstreams()).isFalse();
+					.expectSubscription()
+					.expectNoEvent(Duration.ofMillis(10))
+					.then(() -> sp1.emitNext(1, FAIL_FAST))
+					.then(() -> sp1.emitNext(2, FAIL_FAST))
+					.then(() -> sp1.emitNext(3, FAIL_FAST))
+					.expectNoEvent(Duration.ofMillis(10))
+					.then(() -> sp1.emitNext(4, FAIL_FAST))
+					.expectNext(Arrays.asList(3)) //emission of 4 triggers the buffer emit
+					.then(() -> sp1.emitNext(5, FAIL_FAST))
+					.then(() -> sp1.emitNext(6, FAIL_FAST))
+					.expectNoEvent(Duration.ofMillis(10))
+					.then(() -> sp1.emitNext(7, FAIL_FAST)) // emission of 7 triggers the buffer emit
+					.expectNext(Arrays.asList(6))
+					.then(() -> sp1.emitNext(8, FAIL_FAST))
+					.then(() -> sp1.emitNext(9, FAIL_FAST))
+					.expectNoEvent(Duration.ofMillis(10))
+					.then(() -> sp1.emitComplete(FAIL_FAST)) // completion triggers the buffer emit
+					.expectNext(Collections.singletonList(9))
+					.expectComplete()
+					.verify(Duration.ofSeconds(1));
+		assertThat(sp1.currentSubscriberCount()).as("sp1 has subscriber").isZero();
 	}
 
 	@Test
 	@SuppressWarnings("unchecked")
 	public void normalWhileDoesntMatch() {
-		DirectProcessor<Integer> sp1 = DirectProcessor.create();
+		Sinks.Many<Integer> sp1 = Sinks.unsafe().many().multicast().directBestEffort();
 		FluxBufferPredicate<Integer, List<Integer>> bufferWhile = new FluxBufferPredicate<>(
-				sp1, i -> i > 4, Flux.listSupplier(), FluxBufferPredicate.Mode.WHILE);
+				sp1.asFlux(), i -> i > 4, Flux.listSupplier(), FluxBufferPredicate.Mode.WHILE);
 
 		StepVerifier.create(bufferWhile)
 		            .expectSubscription()
 		            .expectNoEvent(Duration.ofMillis(10))
-		            .then(() -> sp1.onNext(1))
-		            .then(() -> sp1.onNext(2))
-		            .then(() -> sp1.onNext(3))
-		            .then(() -> sp1.onNext(4))
+		            .then(() -> sp1.emitNext(1, FAIL_FAST))
+		            .then(() -> sp1.emitNext(2, FAIL_FAST))
+		            .then(() -> sp1.emitNext(3, FAIL_FAST))
+		            .then(() -> sp1.emitNext(4, FAIL_FAST))
 		            .expectNoEvent(Duration.ofMillis(10))
-		            .then(() -> sp1.onNext(1))
-		            .then(() -> sp1.onNext(2))
-		            .then(() -> sp1.onNext(3))
-		            .then(() -> sp1.onNext(4))
+		            .then(() -> sp1.emitNext(1, FAIL_FAST))
+		            .then(() -> sp1.emitNext(2, FAIL_FAST))
+		            .then(() -> sp1.emitNext(3, FAIL_FAST))
+		            .then(() -> sp1.emitNext(4, FAIL_FAST))
 		            .expectNoEvent(Duration.ofMillis(10))
-		            .then(sp1::onComplete)
+		            .then(() -> sp1.emitComplete(FAIL_FAST))
 		            .expectComplete()
 		            .verify(Duration.ofSeconds(1));
-		assertThat(sp1.hasDownstreams()).isFalse();
+		assertThat(sp1.currentSubscriberCount()).as("sp1 has subscriber").isZero();
 	}
 
 	@Test
 	@SuppressWarnings("unchecked")
 	public void mainErrorWhile() {
-		DirectProcessor<Integer> sp1 = DirectProcessor.create();
+		Sinks.Many<Integer> sp1 = Sinks.unsafe().many().multicast().directBestEffort();
 		FluxBufferPredicate<Integer, List<Integer>> bufferWhile = new FluxBufferPredicate<>(
-				sp1, i -> i % 3 == 0, Flux.listSupplier(), FluxBufferPredicate.Mode.WHILE);
+				sp1.asFlux(), i -> i % 3 == 0, Flux.listSupplier(), FluxBufferPredicate.Mode.WHILE);
 
 		StepVerifier.create(bufferWhile)
 		            .expectSubscription()
-		            .then(() -> sp1.onNext(1))
-		            .then(() -> sp1.onNext(2))
-		            .then(() -> sp1.onNext(3))
-		            .then(() -> sp1.onNext(4))
+		            .then(() -> sp1.emitNext(1, FAIL_FAST))
+		            .then(() -> sp1.emitNext(2, FAIL_FAST))
+		            .then(() -> sp1.emitNext(3, FAIL_FAST))
+		            .then(() -> sp1.emitNext(4, FAIL_FAST))
 		            .expectNext(Arrays.asList(3))
-		            .then(() -> sp1.onError(new RuntimeException("forced failure")))
+		            .then(() -> sp1.emitError(new RuntimeException("forced failure"), FAIL_FAST))
 		            .expectErrorMessage("forced failure")
 		            .verify(Duration.ofMillis(100));
-		assertThat(sp1.hasDownstreams()).isFalse();
+		assertThat(sp1.currentSubscriberCount()).as("sp1 has subscriber").isZero();
 	}
 
 	@Test
 	@SuppressWarnings("unchecked")
 	public void predicateErrorWhile() {
-		DirectProcessor<Integer> sp1 = DirectProcessor.create();
+		Sinks.Many<Integer> sp1 = Sinks.unsafe().many().multicast().directBestEffort();
 		FluxBufferPredicate<Integer, List<Integer>> bufferWhile = new FluxBufferPredicate<>(
-				sp1,
+				sp1.asFlux(),
 				i -> {
 					if (i == 3) return true;
 					if (i == 5) throw new IllegalStateException("predicate failure");
@@ -493,27 +495,27 @@ public class FluxBufferPredicateTest {
 
 		StepVerifier.create(bufferWhile)
 					.expectSubscription()
-					.then(() -> sp1.onNext(1)) //ignored
-					.then(() -> sp1.onNext(2)) //ignored
-					.then(() -> sp1.onNext(3)) //buffered
-					.then(() -> sp1.onNext(4)) //ignored, emits buffer
+					.then(() -> sp1.emitNext(1, FAIL_FAST)) //ignored
+					.then(() -> sp1.emitNext(2, FAIL_FAST)) //ignored
+					.then(() -> sp1.emitNext(3, FAIL_FAST)) //buffered
+					.then(() -> sp1.emitNext(4, FAIL_FAST)) //ignored, emits buffer
 					.expectNext(Arrays.asList(3))
-					.then(() -> sp1.onNext(5)) //fails
+					.then(() -> sp1.emitNext(5, FAIL_FAST)) //fails
 					.expectErrorMessage("predicate failure")
 					.verify(Duration.ofMillis(100));
-		assertThat(sp1.hasDownstreams()).isFalse();
+		assertThat(sp1.currentSubscriberCount()).as("sp1 has subscriber").isZero();
 	}
 
 	@Test
 	@SuppressWarnings("unchecked")
 	public void bufferSupplierThrows() {
-		DirectProcessor<Integer> sp1 = DirectProcessor.create();
+		Sinks.Many<Integer> sp1 = Sinks.unsafe().many().multicast().directBestEffort();
 		FluxBufferPredicate<Integer, List<Integer>> bufferUntil = new FluxBufferPredicate<>(
-				sp1, i -> i % 3 == 0,
+				sp1.asFlux(), i -> i % 3 == 0,
 				() -> { throw new RuntimeException("supplier failure"); },
 				FluxBufferPredicate.Mode.UNTIL);
 
-		assertThat(sp1.hasDownstreams()).as("sp1 has subscribers?").isFalse();
+		assertThat(sp1.currentSubscriberCount()).as("sp1 has subscriber").isZero();
 
 		StepVerifier.create(bufferUntil)
 		            .expectErrorMessage("supplier failure")
@@ -522,10 +524,10 @@ public class FluxBufferPredicateTest {
 
 	@Test
 	public void bufferSupplierThrowsLater() {
-		DirectProcessor<Integer> sp1 = DirectProcessor.create();
+		Sinks.Many<Integer> sp1 = Sinks.unsafe().many().multicast().directBestEffort();
 		int count[] = {1};
 		FluxBufferPredicate<Integer, List<Integer>> bufferUntil = new FluxBufferPredicate<>(
-				sp1, i -> i % 3 == 0,
+				sp1.asFlux(), i -> i % 3 == 0,
 				() -> {
 					if (count[0]-- > 0) {
 						return new ArrayList<>();
@@ -534,29 +536,29 @@ public class FluxBufferPredicateTest {
 				},
 				FluxBufferPredicate.Mode.UNTIL);
 
-		assertThat(sp1.hasDownstreams()).as("sp1 has subscribers?").isFalse();
+		assertThat(sp1.currentSubscriberCount()).as("sp1 has subscriber").isZero();
 
 		StepVerifier.create(bufferUntil)
-		            .then(() -> sp1.onNext(1))
-		            .then(() -> sp1.onNext(2))
+		            .then(() -> sp1.emitNext(1, FAIL_FAST))
+		            .then(() -> sp1.emitNext(2, FAIL_FAST))
 		            .expectNoEvent(Duration.ofMillis(10))
-		            .then(() -> sp1.onNext(3))
+		            .then(() -> sp1.emitNext(3, FAIL_FAST))
 		            .expectErrorMessage("supplier failure")
 		            .verify();
 	}
 
 	@Test
 	public void bufferSupplierReturnsNull() {
-		DirectProcessor<Integer> sp1 = DirectProcessor.create();
+		Sinks.Many<Integer> sp1 = Sinks.unsafe().many().multicast().directBestEffort();
 		FluxBufferPredicate<Integer, List<Integer>> bufferUntil = new FluxBufferPredicate<>(
-				sp1, i -> i % 3 == 0,
+				sp1.asFlux(), i -> i % 3 == 0,
 				() -> null,
 				FluxBufferPredicate.Mode.UNTIL);
 
-		assertThat(sp1.hasDownstreams()).as("sp1 has subscribers?").isFalse();
+		assertThat(sp1.currentSubscriberCount()).as("sp1 has subscriber").isZero();
 
 		StepVerifier.create(bufferUntil)
-		            .then(() -> sp1.onNext(1))
+		            .then(() -> sp1.emitNext(1, FAIL_FAST))
 		            .expectErrorMatches(t -> t instanceof NullPointerException &&
 		                "The bufferSupplier returned a null initial buffer".equals(t.getMessage()))
 		            .verify();
@@ -566,7 +568,7 @@ public class FluxBufferPredicateTest {
 	@SuppressWarnings("unchecked")
 	public void multipleTriggersOfEmptyBufferKeepInitialBuffer() {
 		//this is best demonstrated with bufferWhile:
-		DirectProcessor<Integer> sp1 = DirectProcessor.create();
+		Sinks.Many<Integer> sp1 = Sinks.unsafe().many().multicast().directBestEffort();
 		LongAdder bufferCount = new LongAdder();
 		Supplier<List<Integer>> bufferSupplier = () -> {
 			bufferCount.increment();
@@ -575,20 +577,20 @@ public class FluxBufferPredicateTest {
 
 		FluxBufferPredicate<Integer, List<Integer>> bufferWhile = new
 				FluxBufferPredicate<>(
-				sp1, i -> i >= 10,
+				sp1.asFlux(), i -> i >= 10,
 				bufferSupplier,
 				FluxBufferPredicate.Mode.WHILE);
 
 		StepVerifier.create(bufferWhile)
 		            .then(() -> assertThat(bufferCount.intValue()).isOne())
-		            .then(() -> sp1.onNext(1))
-		            .then(() -> sp1.onNext(2))
-		            .then(() -> sp1.onNext(3))
+		            .then(() -> sp1.emitNext(1, FAIL_FAST))
+		            .then(() -> sp1.emitNext(2, FAIL_FAST))
+		            .then(() -> sp1.emitNext(3, FAIL_FAST))
 		            .then(() -> assertThat(bufferCount.intValue()).isOne())
 		            .expectNoEvent(Duration.ofMillis(10))
-		            .then(() -> sp1.onNext(10))
-		            .then(() -> sp1.onNext(11))
-		            .then(sp1::onComplete)
+		            .then(() -> sp1.emitNext(10, FAIL_FAST))
+		            .then(() -> sp1.emitNext(11, FAIL_FAST))
+		            .then(() -> sp1.emitComplete(FAIL_FAST))
 		            .expectNext(Arrays.asList(10, 11))
 		            .then(() -> assertThat(bufferCount.intValue()).isOne())
 		            .expectComplete()
@@ -981,6 +983,16 @@ public class FluxBufferPredicateTest {
 	}
 
 	@Test
+	public void scanOperator(){
+		Flux<Integer> parent = Flux.just(1);
+		FluxBufferPredicate<Integer, ArrayList<Integer>> test =
+				new FluxBufferPredicate<>(parent, v -> v != 0, ArrayList::new, FluxBufferPredicate.Mode.UNTIL);
+
+		assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
+	}
+
+	@Test
 	public void scanMain() {
 		CoreSubscriber<? super List> actual = new LambdaSubscriber<>(null, e -> {}, null,
 				sub -> sub.request(100));
@@ -996,6 +1008,7 @@ public class FluxBufferPredicateTest {
 		assertThat(test.scan(Scannable.Attr.REQUESTED_FROM_DOWNSTREAM)).isEqualTo(100L);
 		assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
 		assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(actual);
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 
 		assertThat(test.scan(Scannable.Attr.CANCELLED)).isFalse();
 

@@ -30,6 +30,7 @@ import reactor.util.context.Context;
 /**
  * @author Stephane Maldini
  */
+@Deprecated
 final class DelegateProcessor<IN, OUT> extends FluxProcessor<IN, OUT> {
 
 	final Publisher<OUT> downstream;
@@ -44,7 +45,7 @@ final class DelegateProcessor<IN, OUT> extends FluxProcessor<IN, OUT> {
 	@Override
 	public Context currentContext() {
 		if(upstream instanceof CoreSubscriber){
-			return ((CoreSubscriber)upstream).currentContext();
+			return ((CoreSubscriber<?>)upstream).currentContext();
 		}
 		return Context.empty();
 	}

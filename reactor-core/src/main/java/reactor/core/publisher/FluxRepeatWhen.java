@@ -22,13 +22,14 @@ import java.util.function.Function;
 import java.util.stream.Stream;
 
 import org.reactivestreams.Publisher;
-import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
+
 import reactor.core.CorePublisher;
 import reactor.core.CoreSubscriber;
 import reactor.core.Scannable;
 import reactor.util.annotation.Nullable;
 import reactor.util.context.Context;
+import reactor.util.context.ContextView;
 
 /**
  * Repeats a source when a companion sequence signals an item in response to the main's
@@ -56,14 +57,10 @@ final class FluxRepeatWhen<T> extends InternalFluxOperator<T, T> {
 	@Override
 	public CoreSubscriber<? super T> subscribeOrReturn(CoreSubscriber<? super T> actual) {
 		RepeatWhenOtherSubscriber other = new RepeatWhenOtherSubscriber();
-		Subscriber<Long> signaller = Operators.serialize(other.completionSignal);
-
-		signaller.onSubscribe(Operators.emptySubscription());
-
 		CoreSubscriber<T> serial = Operators.serialize(actual);
 
 		RepeatWhenMainSubscriber<T> main =
-				new RepeatWhenMainSubscriber<>(serial, signaller, source);
+				new RepeatWhenMainSubscriber<>(serial, other.completionSignal, source);
 		other.main = main;
 
 		serial.onSubscribe(main);
@@ -89,12 +86,18 @@ final class FluxRepeatWhen<T> extends InternalFluxOperator<T, T> {
 		}
 	}
 
+	@Override
+	public Object scanUnsafe(Attr key) {
+		if (key == Attr.RUN_STYLE) return Attr.RunStyle.SYNC;
+		return super.scanUnsafe(key);
+	}
+
 	static final class RepeatWhenMainSubscriber<T>
 			extends Operators.MultiSubscriptionSubscriber<T, T> {
 
 		final Operators.DeferredSubscription otherArbiter;
 
-		final Subscriber<Long> signaller;
+		final Sinks.Many<Long> signaller;
 
 		final CorePublisher<? extends T> source;
 
@@ -107,7 +110,7 @@ final class FluxRepeatWhen<T> extends InternalFluxOperator<T, T> {
 		long    produced;
 
 		RepeatWhenMainSubscriber(CoreSubscriber<? super T> actual,
-				Subscriber<Long> signaller,
+				Sinks.Many<Long> signaller,
 				CorePublisher<? extends T> source) {
 			super(actual);
 			this.signaller = signaller;
@@ -157,7 +160,7 @@ final class FluxRepeatWhen<T> extends InternalFluxOperator<T, T> {
 			}
 
 			otherArbiter.request(1);
-			signaller.onNext(p);
+			signaller.emitNext(p, Sinks.EmitFailureHandler.FAIL_FAST);
 		}
 
 		void setWhen(Subscription w) {
@@ -173,8 +176,8 @@ final class FluxRepeatWhen<T> extends InternalFluxOperator<T, T> {
 
 					//flow that emit a Context as a trigger for the re-subscription are
 					//used to REPLACE the currentContext()
-					if (trigger instanceof Context) {
-						this.context = this.context.putAll((Context) trigger);
+					if (trigger instanceof ContextView) {
+						this.context = this.context.putAll((ContextView) trigger);
 					}
 
 					source.subscribe(this);
@@ -196,6 +199,11 @@ final class FluxRepeatWhen<T> extends InternalFluxOperator<T, T> {
 			actual.onComplete();
 		}
 
+		@Override
+		public Object scanUnsafe(Attr key) {
+			if (key == Attr.RUN_STYLE) return Attr.RunStyle.SYNC;
+			return super.scanUnsafe(key);
+		}
 	}
 
 	static final class RepeatWhenOtherSubscriber extends Flux<Long>
@@ -203,7 +211,7 @@ final class FluxRepeatWhen<T> extends InternalFluxOperator<T, T> {
 
 		RepeatWhenMainSubscriber<?> main;
 
-		final DirectProcessor<Long> completionSignal = new DirectProcessor<>();
+		final Sinks.Many<Long> completionSignal = Sinks.many().multicast().onBackpressureBuffer();
 
 		@Override
 		public Context currentContext() {
@@ -215,6 +223,7 @@ final class FluxRepeatWhen<T> extends InternalFluxOperator<T, T> {
 		public Object scanUnsafe(Attr key) {
 			if (key == Attr.PARENT) return main.otherArbiter;
 			if (key == Attr.ACTUAL) return main;
+			if (key == Attr.RUN_STYLE) return Attr.RunStyle.SYNC;
 
 			return null;
 		}
@@ -241,7 +250,7 @@ final class FluxRepeatWhen<T> extends InternalFluxOperator<T, T> {
 
 		@Override
 		public void subscribe(CoreSubscriber<? super Long> actual) {
-			completionSignal.subscribe(actual);
+			completionSignal.asFlux().subscribe(actual);
 		}
 
 		@Override
@@ -250,8 +259,8 @@ final class FluxRepeatWhen<T> extends InternalFluxOperator<T, T> {
 		}
 
 		@Override
-		public DirectProcessor<Long> source() {
-			return completionSignal;
+		public Flux<Long> source() {
+			return completionSignal.asFlux();
 		}
 
 		@Override

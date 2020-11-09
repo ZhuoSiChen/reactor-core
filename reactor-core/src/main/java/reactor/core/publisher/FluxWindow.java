@@ -24,9 +24,9 @@ import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
-import org.reactivestreams.Processor;
 import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
+
 import reactor.core.CoreSubscriber;
 import reactor.core.Disposable;
 import reactor.core.Scannable;
@@ -48,7 +48,7 @@ final class FluxWindow<T> extends InternalFluxOperator<T, Flux<T>> {
 
 	final Supplier<? extends Queue<T>> processorQueueSupplier;
 
-	final Supplier<? extends Queue<UnicastProcessor<T>>> overflowQueueSupplier;
+	final Supplier<? extends Queue<Sinks.Many<T>>> overflowQueueSupplier;
 
 	FluxWindow(Flux<? extends T> source,
 			int size,
@@ -68,7 +68,7 @@ final class FluxWindow<T> extends InternalFluxOperator<T, Flux<T>> {
 			int size,
 			int skip,
 			Supplier<? extends Queue<T>> processorQueueSupplier,
-			Supplier<? extends Queue<UnicastProcessor<T>>> overflowQueueSupplier) {
+			Supplier<? extends Queue<Sinks.Many<T>>> overflowQueueSupplier) {
 		super(source);
 		if (size <= 0) {
 			throw new IllegalArgumentException("size > 0 required but it was " + size);
@@ -102,6 +102,12 @@ final class FluxWindow<T> extends InternalFluxOperator<T, Flux<T>> {
 		}
 	}
 
+	@Override
+	public Object scanUnsafe(Attr key) {
+		if (key == Attr.RUN_STYLE) return Attr.RunStyle.SYNC;
+		return super.scanUnsafe(key);
+	}
+
 	static final class WindowExactSubscriber<T>
 			implements Disposable, InnerOperator<T, Flux<T>> {
 
@@ -125,7 +131,7 @@ final class FluxWindow<T> extends InternalFluxOperator<T, Flux<T>> {
 
 		Subscription s;
 
-		UnicastProcessor<T> window;
+		Sinks.Many<T> window;
 
 		boolean done;
 
@@ -155,24 +161,24 @@ final class FluxWindow<T> extends InternalFluxOperator<T, Flux<T>> {
 
 			int i = index;
 
-			UnicastProcessor<T> w = window;
+			Sinks.Many<T> w = window;
 			if (cancelled == 0 && i == 0) {
 				WINDOW_COUNT.getAndIncrement(this);
 
-				w = new UnicastProcessor<>(processorQueueSupplier.get(), this);
+				w = Sinks.unsafe().many().unicast().onBackpressureBuffer(processorQueueSupplier.get(), this);
 				window = w;
 
-				actual.onNext(w);
+				actual.onNext(w.asFlux());
 			}
 
 			i++;
 
-			w.onNext(t);
+			w.emitNext(t, Sinks.EmitFailureHandler.FAIL_FAST);
 
 			if (i == size) {
 				index = 0;
 				window = null;
-				w.onComplete();
+				w.emitComplete(Sinks.EmitFailureHandler.FAIL_FAST);
 			}
 			else {
 				index = i;
@@ -186,10 +192,10 @@ final class FluxWindow<T> extends InternalFluxOperator<T, Flux<T>> {
 				return;
 			}
 			done = true;
-			Processor<T, T> w = window;
+			Sinks.Many<T> w = window;
 			if (w != null) {
 				window = null;
-				w.onError(t);
+				w.emitError(t, Sinks.EmitFailureHandler.FAIL_FAST);
 			}
 
 			actual.onError(t);
@@ -201,10 +207,10 @@ final class FluxWindow<T> extends InternalFluxOperator<T, Flux<T>> {
 				return;
 			}
 			done = true;
-			Processor<T, T> w = window;
+			Sinks.Many<T> w = window;
 			if (w != null) {
 				window = null;
-				w.onComplete();
+				w.emitComplete(Sinks.EmitFailureHandler.FAIL_FAST);
 			}
 
 			actual.onComplete();
@@ -249,13 +255,14 @@ final class FluxWindow<T> extends InternalFluxOperator<T, Flux<T>> {
 			if (key == Attr.CANCELLED) return cancelled == 1;
 			if (key == Attr.CAPACITY) return size;
 			if (key == Attr.TERMINATED) return done;
+			if (key == Attr.RUN_STYLE) return Attr.RunStyle.SYNC;
 
 			return InnerOperator.super.scanUnsafe(key);
 		}
 
 		@Override
 		public Stream<? extends Scannable> inners() {
-			return Stream.of(window);
+			return Stream.of(Scannable.from(window));
 		}
 	}
 
@@ -291,7 +298,7 @@ final class FluxWindow<T> extends InternalFluxOperator<T, Flux<T>> {
 
 		Subscription s;
 
-		UnicastProcessor<T> window;
+		Sinks.Many<T> window;
 
 		boolean done;
 
@@ -324,20 +331,20 @@ final class FluxWindow<T> extends InternalFluxOperator<T, Flux<T>> {
 
 			int i = index;
 
-			UnicastProcessor<T> w = window;
+			Sinks.Many<T> w = window;
 			if (i == 0) {
 				WINDOW_COUNT.getAndIncrement(this);
 
-				w = new UnicastProcessor<>(processorQueueSupplier.get(), this);
+				w = Sinks.unsafe().many().unicast().onBackpressureBuffer(processorQueueSupplier.get(), this);
 				window = w;
 
-				actual.onNext(w);
+				actual.onNext(w.asFlux());
 			}
 
 			i++;
 
 			if (w != null) {
-				w.onNext(t);
+				w.emitNext(t, Sinks.EmitFailureHandler.FAIL_FAST);
 			}
 			else {
 				Operators.onDiscard(t, ctx);
@@ -346,7 +353,7 @@ final class FluxWindow<T> extends InternalFluxOperator<T, Flux<T>> {
 			if (i == size) {
 				window = null;
 				if (w != null) {
-					w.onComplete();
+					w.emitComplete(Sinks.EmitFailureHandler.FAIL_FAST);
 				}
 			}
 
@@ -366,10 +373,10 @@ final class FluxWindow<T> extends InternalFluxOperator<T, Flux<T>> {
 			}
 			done = true;
 
-			Processor<T, T> w = window;
+			Sinks.Many<T> w = window;
 			if (w != null) {
 				window = null;
-				w.onError(t);
+				w.emitError(t, Sinks.EmitFailureHandler.FAIL_FAST);
 			}
 
 			actual.onError(t);
@@ -382,10 +389,10 @@ final class FluxWindow<T> extends InternalFluxOperator<T, Flux<T>> {
 			}
 			done = true;
 
-			Processor<T, T> w = window;
+			Sinks.Many<T> w = window;
 			if (w != null) {
 				window = null;
-				w.onComplete();
+				w.emitComplete(Sinks.EmitFailureHandler.FAIL_FAST);
 			}
 
 			actual.onComplete();
@@ -438,24 +445,25 @@ final class FluxWindow<T> extends InternalFluxOperator<T, Flux<T>> {
 			if (key == Attr.CANCELLED) return cancelled == 1;
 			if (key == Attr.CAPACITY) return size;
 			if (key == Attr.TERMINATED) return done;
+			if (key == Attr.RUN_STYLE) return Attr.RunStyle.SYNC;
 
 			return InnerOperator.super.scanUnsafe(key);
 		}
 
 		@Override
 		public Stream<? extends Scannable> inners() {
-			return Stream.of(window);
+			return Stream.of(Scannable.from(window));
 		}
 	}
 
-	static final class WindowOverlapSubscriber<T> extends ArrayDeque<UnicastProcessor<T>>
+	static final class WindowOverlapSubscriber<T> extends ArrayDeque<Sinks.Many<T>>
 			implements Disposable, InnerOperator<T, Flux<T>> {
 
 		final CoreSubscriber<? super Flux<T>> actual;
 
 		final Supplier<? extends Queue<T>> processorQueueSupplier;
 
-		final Queue<UnicastProcessor<T>> queue;
+		final Queue<Sinks.Many<T>> queue;
 
 		final int size;
 
@@ -503,7 +511,7 @@ final class FluxWindow<T> extends InternalFluxOperator<T, Flux<T>> {
 				int size,
 				int skip,
 				Supplier<? extends Queue<T>> processorQueueSupplier,
-				Queue<UnicastProcessor<T>> overflowQueue) {
+				Queue<Sinks.Many<T>> overflowQueue) {
 			this.actual = actual;
 			this.size = size;
 			this.skip = skip;
@@ -533,7 +541,7 @@ final class FluxWindow<T> extends InternalFluxOperator<T, Flux<T>> {
 				if (cancelled == 0) {
 					WINDOW_COUNT.getAndIncrement(this);
 
-					UnicastProcessor<T> w = new UnicastProcessor<>(processorQueueSupplier.get(), this);
+					Sinks.Many<T> w = Sinks.unsafe().many().unicast().onBackpressureBuffer(processorQueueSupplier.get(), this);
 
 					offer(w);
 
@@ -544,17 +552,17 @@ final class FluxWindow<T> extends InternalFluxOperator<T, Flux<T>> {
 
 			i++;
 
-			for (Processor<T, T> w : this) {
-				w.onNext(t);
+			for (Sinks.Many<T> w : this) {
+				w.emitNext(t, Sinks.EmitFailureHandler.FAIL_FAST);
 			}
 
 			int p = produced + 1;
 			if (p == size) {
 				produced = p - skip;
 
-				Processor<T, T> w = poll();
+				Sinks.Many<T> w = poll();
 				if (w != null) {
-					w.onComplete();
+					w.emitComplete(Sinks.EmitFailureHandler.FAIL_FAST);
 				}
 			}
 			else {
@@ -577,8 +585,8 @@ final class FluxWindow<T> extends InternalFluxOperator<T, Flux<T>> {
 			}
 			done = true;
 
-			for (Processor<T, T> w : this) {
-				w.onError(t);
+			for (Sinks.Many<T> w : this) {
+				w.emitError(t, Sinks.EmitFailureHandler.FAIL_FAST);
 			}
 			clear();
 
@@ -593,8 +601,8 @@ final class FluxWindow<T> extends InternalFluxOperator<T, Flux<T>> {
 			}
 			done = true;
 
-			for (Processor<T, T> w : this) {
-				w.onComplete();
+			for (Sinks.Many<T> w : this) {
+				w.emitComplete(Sinks.EmitFailureHandler.FAIL_FAST);
 			}
 			clear();
 
@@ -607,7 +615,7 @@ final class FluxWindow<T> extends InternalFluxOperator<T, Flux<T>> {
 			}
 
 			final Subscriber<? super Flux<T>> a = actual;
-			final Queue<UnicastProcessor<T>> q = queue;
+			final Queue<Sinks.Many<T>> q = queue;
 			int missed = 1;
 
 			for (; ; ) {
@@ -618,7 +626,7 @@ final class FluxWindow<T> extends InternalFluxOperator<T, Flux<T>> {
 				while (e != r) {
 					boolean d = done;
 
-					UnicastProcessor<T> t = q.poll();
+					Sinks.Many<T> t = q.poll();
 
 					boolean empty = t == null;
 
@@ -630,7 +638,7 @@ final class FluxWindow<T> extends InternalFluxOperator<T, Flux<T>> {
 						break;
 					}
 
-					a.onNext(t);
+					a.onNext(t.asFlux());
 
 					e++;
 				}
@@ -734,6 +742,7 @@ final class FluxWindow<T> extends InternalFluxOperator<T, Flux<T>> {
 			}
 			if (key == Attr.ERROR) return error;
 			if (key == Attr.REQUESTED_FROM_DOWNSTREAM) return requested;
+			if (key == Attr.RUN_STYLE) return Attr.RunStyle.SYNC;
 
 			return InnerOperator.super.scanUnsafe(key);
 		}

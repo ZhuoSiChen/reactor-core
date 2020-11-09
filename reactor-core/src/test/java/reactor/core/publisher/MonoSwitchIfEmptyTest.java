@@ -16,9 +16,11 @@
 package reactor.core.publisher;
 
 import org.junit.jupiter.api.Test;
+import reactor.core.Scannable;
 import reactor.test.subscriber.AssertSubscriber;
 
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class MonoSwitchIfEmptyTest {
 
@@ -99,6 +101,13 @@ public class MonoSwitchIfEmptyTest {
 		ts.assertValues(10)
 		  .assertComplete()
 		  .assertNoError();
+	}
+
+	@Test
+	public void scanOperator(){
+	    MonoSwitchIfEmpty<Integer> test = new MonoSwitchIfEmpty<>(Mono.just(1), Mono.empty());
+
+	    assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 	}
 
 }

@@ -26,6 +26,7 @@ import org.assertj.core.api.Condition;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.reactivestreams.Subscription;
+
 import reactor.core.CoreSubscriber;
 import reactor.core.Fuseable;
 import reactor.core.Scannable;
@@ -36,6 +37,7 @@ import reactor.test.subscriber.AssertSubscriber;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static reactor.core.publisher.Sinks.EmitFailureHandler.FAIL_FAST;
 
 public class FluxUsingTest extends FluxOperatorTest<String, String> {
 
@@ -268,14 +270,14 @@ public class FluxUsingTest extends FluxOperatorTest<String, String> {
 
 		AtomicInteger cleanup = new AtomicInteger();
 
-		DirectProcessor<Integer> tp = DirectProcessor.create();
+		Sinks.Many<Integer> tp = Sinks.unsafe().many().multicast().directBestEffort();
 
-		Flux.using(() -> 1, r -> tp, cleanup::set, true)
+		Flux.using(() -> 1, r -> tp.asFlux(), cleanup::set, true)
 		    .subscribe(ts);
 
-		assertThat(tp.hasDownstreams()).as("No subscriber?").isTrue();
+		assertThat(tp.currentSubscriberCount()).as("tp has subscriber").isPositive();
 
-		tp.onNext(1);
+		tp.emitNext(1, FAIL_FAST);
 
 		ts.assertValues(1)
 		  .assertNotComplete()
@@ -283,13 +285,13 @@ public class FluxUsingTest extends FluxOperatorTest<String, String> {
 
 		ts.cancel();
 
-		tp.onNext(2);
+		tp.emitNext(2, FAIL_FAST);
 
 		ts.assertValues(1)
 		  .assertNotComplete()
 		  .assertNoError();
 
-		assertThat(tp.hasDownstreams()).as("Has subscriber?").isFalse();
+		assertThat(tp.currentSubscriberCount()).as("tp has subscriber").isZero();
 
 		assertThat(cleanup).hasValue(1);
 	}
@@ -318,6 +320,15 @@ public class FluxUsingTest extends FluxOperatorTest<String, String> {
 	}
 
 	@Test
+	public void scanOperator(){
+		AtomicInteger cleanup = new AtomicInteger();
+
+		FluxUsing<Integer, Integer> test = new FluxUsing<>(() -> 1, r -> Flux.range(r, 10), cleanup::set, false);
+
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
+	}
+
+	@Test
     public void scanSubscriber() {
         CoreSubscriber<Integer> actual = new LambdaSubscriber<>(null, e -> {}, null, null);
         FluxUsing.UsingSubscriber<Integer, String> test = new FluxUsing.UsingSubscriber<>(actual,
@@ -327,6 +338,7 @@ public class FluxUsingTest extends FluxOperatorTest<String, String> {
 
         Assertions.assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
         Assertions.assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(actual);
+        assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 
         Assertions.assertThat(test.scan(Scannable.Attr.CANCELLED)).isFalse();
         Assertions.assertThat(test.scan(Scannable.Attr.TERMINATED)).isFalse();
@@ -346,6 +358,7 @@ public class FluxUsingTest extends FluxOperatorTest<String, String> {
 
         Assertions.assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
         Assertions.assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(actual);
+        assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 
         Assertions.assertThat(test.scan(Scannable.Attr.CANCELLED)).isFalse();
         Assertions.assertThat(test.scan(Scannable.Attr.TERMINATED)).isFalse();
@@ -364,6 +377,7 @@ public class FluxUsingTest extends FluxOperatorTest<String, String> {
 
         Assertions.assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
         Assertions.assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(actual);
+        assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 
         Assertions.assertThat(test.scan(Scannable.Attr.CANCELLED)).isFalse();
         Assertions.assertThat(test.scan(Scannable.Attr.TERMINATED)).isFalse();

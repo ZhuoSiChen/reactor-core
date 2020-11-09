@@ -27,7 +27,8 @@ import org.junit.jupiter.api.Test;
 import org.reactivestreams.Subscription;
 
 import reactor.core.Disposable;
-import reactor.core.Exceptions;
+import reactor.test.LoggerUtils;
+import reactor.test.util.TestLogger;
 
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -82,9 +83,11 @@ public class BaseSubscriberTest {
 
 	@Test
 	public void onErrorCallbackNotImplemented() {
-		Flux<String> flux = Flux.error(new IllegalStateException());
-
+		TestLogger testLogger = new TestLogger();
+		LoggerUtils.addAppender(testLogger, Operators.class);
 		try {
+			Flux<String> flux = Flux.error(new IllegalStateException());
+
 			flux.subscribe(new BaseSubscriber<String>() {
 				@Override
 				protected void hookOnSubscribe(Subscription subscription) {
@@ -96,11 +99,12 @@ public class BaseSubscriberTest {
 					//NO-OP
 				}
 			});
-			fail("expected UnsupportedOperationException");
+			Assertions.assertThat(testLogger.getErrContent())
+			          .contains("Operator called default onErrorDropped")
+			          .contains("reactor.core.Exceptions$ErrorCallbackNotImplemented: java.lang.IllegalStateException");
 		}
-		catch (UnsupportedOperationException e) {
-			assertThat(e.getClass().getSimpleName()).isEqualTo("ErrorCallbackNotImplemented");
-			assertThat(e).hasCauseInstanceOf(IllegalStateException.class);
+		finally {
+			LoggerUtils.resetAppender(Operators.class);
 		}
 	}
 
@@ -274,16 +278,17 @@ public class BaseSubscriberTest {
 
 	@Test
 	public void finallyExecutesWhenHookOnErrorFails() {
-		RuntimeException err = new IllegalArgumentException("hookOnError");
-		AtomicReference<SignalType> checkFinally = new AtomicReference<>();
-
+		TestLogger testLogger = new TestLogger();
+		LoggerUtils.addAppender(testLogger, Operators.class);
 		try {
-			Flux.<String>error(new IllegalStateException("someError"))
-					.subscribe(new BaseSubscriber<String>() {
-						@Override
-						protected void hookOnSubscribe(Subscription subscription) {
-							requestUnbounded();
-						}
+			RuntimeException error = new IllegalArgumentException("hookOnError");
+			AtomicReference<SignalType> checkFinally = new AtomicReference<>();
+
+			Flux.<String>error(new IllegalStateException("someError")).subscribe(new BaseSubscriber<String>() {
+				@Override
+				protected void hookOnSubscribe(Subscription subscription) {
+					requestUnbounded();
+				}
 
 				@Override
 				protected void hookOnNext(String value) {
@@ -291,7 +296,7 @@ public class BaseSubscriberTest {
 
 				@Override
 				protected void hookOnError(Throwable throwable) {
-					throw err;
+					throw error;
 				}
 
 				@Override
@@ -299,12 +304,14 @@ public class BaseSubscriberTest {
 					checkFinally.set(type);
 				}
 			});
-			fail("expected " + err);
+			Assertions.assertThat(testLogger.getErrContent())
+			          .contains("Operator called default onErrorDropped")
+			          .contains(error.getMessage());
+			assertThat(checkFinally).hasValue(SignalType.ON_ERROR);
 		}
-		catch (Throwable e) {
-			assertThat(Exceptions.unwrap(e)).isSameAs(err);
+		finally {
+			LoggerUtils.resetAppender(Operators.class);
 		}
-		assertThat(checkFinally).hasValue(SignalType.ON_ERROR);
 	}
 
 	@Test

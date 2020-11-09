@@ -25,6 +25,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.assertj.core.data.Offset;
 import org.junit.jupiter.api.Test;
 import org.reactivestreams.Subscription;
+
+import reactor.core.Scannable;
 import reactor.core.scheduler.Schedulers;
 import reactor.test.StepVerifier;
 import reactor.test.subscriber.AssertSubscriber;
@@ -165,5 +167,12 @@ public class MonoRunnableTest {
 		            .verifyComplete();
 
 		assertThat(TimeUnit.NANOSECONDS.toMillis(subscribeTs.get())).isCloseTo(500L, Offset.offset(50L));
+	}
+
+	@Test
+	public void scanOperator(){
+		MonoRunnable<String> test = new MonoRunnable<>(() -> {});
+
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 	}
 }

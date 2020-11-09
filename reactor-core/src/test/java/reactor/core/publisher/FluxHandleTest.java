@@ -38,14 +38,13 @@ import reactor.test.publisher.TestPublisher;
 import reactor.test.subscriber.AssertSubscriber;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static reactor.core.Fuseable.ASYNC;
-import static reactor.core.Fuseable.SYNC;
+import static reactor.core.Fuseable.*;
 
 public class FluxHandleTest extends FluxOperatorTest<String, String> {
 
 	@Override
 	protected Scenario<String, String> defaultScenarioOptions(Scenario<String, String> defaultOptions) {
-		return defaultOptions.fusionMode(Fuseable.ASYNC);
+		return defaultOptions.fusionMode(ASYNC);
 	}
 
 	@Override
@@ -370,7 +369,7 @@ public class FluxHandleTest extends FluxOperatorTest<String, String> {
 		StepVerifier.create(Flux.just("test")
 		                        .as(this::passThrough)
 		                        .filter(t -> true))
-		            .expectFusion(Fuseable.SYNC)
+		            .expectFusion(SYNC)
 		            .expectNext("test")
 		            .verifyComplete();
 	}
@@ -381,8 +380,26 @@ public class FluxHandleTest extends FluxOperatorTest<String, String> {
 		                        .handle((data, s) -> {
 		                        })
 		                        .filter(t -> true))
-		            .expectFusion(Fuseable.SYNC)
+		            .expectFusion(SYNC)
 		            .verifyComplete();
+	}
+
+	@Test
+	public void scanOperator(){
+		Flux<Integer> parent = Flux.just(1);
+		FluxHandle<Integer, ?> test = new FluxHandle<>(parent, (t, s) -> { });
+
+		assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
+	}
+
+	@Test
+	public void scanFuseableOperator(){
+		Flux<Integer> parent = Flux.just(1);
+		FluxHandleFuseable<Integer, ?> test = new FluxHandleFuseable<>(parent, (t, s) -> { });
+
+		assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 	}
 
     @Test
@@ -394,6 +411,7 @@ public class FluxHandleTest extends FluxOperatorTest<String, String> {
 
         assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
         assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(actual);
+        assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 
         assertThat(test.scan(Scannable.Attr.TERMINATED)).isFalse();
         test.error = new IllegalStateException("boom");
@@ -413,6 +431,7 @@ public class FluxHandleTest extends FluxOperatorTest<String, String> {
 
         assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
         assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(subscriber);
+        assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 
         assertThat(test.scan(Scannable.Attr.TERMINATED)).isFalse();
         test.error = new IllegalStateException("boom");
@@ -431,6 +450,7 @@ public class FluxHandleTest extends FluxOperatorTest<String, String> {
 
         assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
         assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(actual);
+        assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 
         assertThat(test.scan(Scannable.Attr.TERMINATED)).isFalse();
         test.error = new IllegalStateException("boom");
@@ -450,6 +470,7 @@ public class FluxHandleTest extends FluxOperatorTest<String, String> {
 
         assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
         assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(subscriber);
+        assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 
         assertThat(test.scan(Scannable.Attr.TERMINATED)).isFalse();
         test.error = new IllegalStateException("boom");
@@ -466,7 +487,7 @@ public class FluxHandleTest extends FluxOperatorTest<String, String> {
 		                                               .get(AtomicInteger.class)
 		                                               .incrementAndGet()))
 		                        .repeat(9)
-		                        .subscriberContext(ctx -> ctx.put(AtomicInteger.class,
+		                        .contextWrite(ctx -> ctx.put(AtomicInteger.class,
 				                        new AtomicInteger())))
 		            .expectNext(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
 		            .verifyComplete();
@@ -480,7 +501,7 @@ public class FluxHandleTest extends FluxOperatorTest<String, String> {
 		                                               .get(AtomicInteger.class)
 		                                               .incrementAndGet()))
 		                        .repeat(9)
-		                        .subscriberContext(ctx -> ctx.put(AtomicInteger.class,
+		                        .contextWrite(ctx -> ctx.put(AtomicInteger.class,
 				                        new AtomicInteger())))
 		            .expectNext(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
 		            .verifyComplete();
@@ -494,7 +515,7 @@ public class FluxHandleTest extends FluxOperatorTest<String, String> {
 		                                               .incrementAndGet()))
 		                        .filter(d -> true)
 		                        .repeat(9)
-		                        .subscriberContext(ctx -> ctx.put(AtomicInteger.class,
+		                        .contextWrite(ctx -> ctx.put(AtomicInteger.class,
 				                        new AtomicInteger())))
 		            .expectNext(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
 		            .verifyComplete();
@@ -507,7 +528,7 @@ public class FluxHandleTest extends FluxOperatorTest<String, String> {
 		                                               .incrementAndGet()))
 		                        .filter(d -> true)
 		                        .repeat(9)
-		                        .subscriberContext(ctx -> ctx.put(AtomicInteger.class,
+		                        .contextWrite(ctx -> ctx.put(AtomicInteger.class,
 				                        new AtomicInteger())))
 		            .expectNext(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
 		            .verifyComplete();

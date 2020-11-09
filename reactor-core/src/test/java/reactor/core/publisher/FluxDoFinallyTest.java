@@ -30,11 +30,14 @@ import org.reactivestreams.Subscription;
 import reactor.core.CoreSubscriber;
 import reactor.core.Exceptions;
 import reactor.core.Scannable;
+import reactor.test.LoggerUtils;
 import reactor.test.StepVerifier;
+import reactor.test.util.TestLogger;
 
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThat;
 import static reactor.core.Fuseable.*;
+import static reactor.core.publisher.Sinks.EmitFailureHandler.FAIL_FAST;
 
 public class FluxDoFinallyTest implements Consumer<SignalType> {
 
@@ -139,15 +142,15 @@ public class FluxDoFinallyTest implements Consumer<SignalType> {
 
 	@Test
 	public void asyncFused() {
-		UnicastProcessor<Integer> up = UnicastProcessor.create();
-		up.onNext(1);
-		up.onNext(2);
-		up.onNext(3);
-		up.onNext(4);
-		up.onNext(5);
-		up.onComplete();
+		Sinks.Many<Integer> up = Sinks.many().unicast().onBackpressureBuffer();
+		up.emitNext(1, FAIL_FAST);
+		up.emitNext(2, FAIL_FAST);
+		up.emitNext(3, FAIL_FAST);
+		up.emitNext(4, FAIL_FAST);
+		up.emitNext(5, FAIL_FAST);
+		up.emitComplete(FAIL_FAST);
 
-		StepVerifier.create(up.doFinally(this))
+		StepVerifier.create(up.asFlux().doFinally(this))
 		            .expectFusion(ASYNC)
 		            .expectNext(1, 2, 3, 4, 5)
 		            .expectComplete()
@@ -159,15 +162,15 @@ public class FluxDoFinallyTest implements Consumer<SignalType> {
 
 	@Test
 	public void asyncFusedThreadBarrier() {
-		UnicastProcessor<Integer> up = UnicastProcessor.create();
-		up.onNext(1);
-		up.onNext(2);
-		up.onNext(3);
-		up.onNext(4);
-		up.onNext(5);
-		up.onComplete();
+		Sinks.Many<Object> up = Sinks.many().unicast().onBackpressureBuffer();
+		up.emitNext(1, FAIL_FAST);
+		up.emitNext(2, FAIL_FAST);
+		up.emitNext(3, FAIL_FAST);
+		up.emitNext(4, FAIL_FAST);
+		up.emitNext(5, FAIL_FAST);
+		up.emitComplete(FAIL_FAST);
 
-		StepVerifier.create(up.doFinally(this))
+		StepVerifier.create(up.asFlux().doFinally(this))
 		            .expectFusion(ASYNC | THREAD_BARRIER, NONE)
 		            .expectNext(1, 2, 3, 4, 5)
 		            .expectComplete()
@@ -281,15 +284,15 @@ public class FluxDoFinallyTest implements Consumer<SignalType> {
 
 	@Test
 	public void asyncFusedConditional() {
-		UnicastProcessor<Integer> up = UnicastProcessor.create();
-		up.onNext(1);
-		up.onNext(2);
-		up.onNext(3);
-		up.onNext(4);
-		up.onNext(5);
-		up.onComplete();
+		Sinks.Many<Object> up = Sinks.many().unicast().onBackpressureBuffer();
+		up.emitNext(1, FAIL_FAST);
+		up.emitNext(2, FAIL_FAST);
+		up.emitNext(3, FAIL_FAST);
+		up.emitNext(4, FAIL_FAST);
+		up.emitNext(5, FAIL_FAST);
+		up.emitComplete(FAIL_FAST);
 
-		StepVerifier.create(up.doFinally(this)
+		StepVerifier.create(up.asFlux().doFinally(this)
 		                      .filter(i -> true))
 		            .expectFusion(ASYNC)
 		            .expectNext(1, 2, 3, 4, 5)
@@ -302,15 +305,15 @@ public class FluxDoFinallyTest implements Consumer<SignalType> {
 
 	@Test
 	public void asyncFusedThreadBarrierConditional() {
-		UnicastProcessor<Integer> up = UnicastProcessor.create();
-		up.onNext(1);
-		up.onNext(2);
-		up.onNext(3);
-		up.onNext(4);
-		up.onNext(5);
-		up.onComplete();
+		Sinks.Many<Object> up = Sinks.many().unicast().onBackpressureBuffer();
+		up.emitNext(1, FAIL_FAST);
+		up.emitNext(2, FAIL_FAST);
+		up.emitNext(3, FAIL_FAST);
+		up.emitNext(4, FAIL_FAST);
+		up.emitNext(5, FAIL_FAST);
+		up.emitComplete(FAIL_FAST);
 
-		StepVerifier.create(up.doFinally(this)
+		StepVerifier.create(up.asFlux().doFinally(this)
 		                      .filter(i -> true))
 		            .expectFusion(ASYNC | THREAD_BARRIER, NONE)
 		            .expectNext(1, 2, 3, 4, 5)
@@ -380,6 +383,24 @@ public class FluxDoFinallyTest implements Consumer<SignalType> {
 	}
 
 	@Test
+	public void scanOperator(){
+		Flux<Integer> parent = Flux.just(1);
+		FluxDoFinally test = new FluxDoFinally<>(parent, v -> {});
+
+		Assertions.assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
+		Assertions.assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
+	}
+
+	@Test
+	public void scanFuseableOperator(){
+		Flux<Integer> parent = Flux.just(1);
+		FluxDoFinallyFuseable<Integer> test = new FluxDoFinallyFuseable<>(parent, s -> {});
+
+		Assertions.assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
+		Assertions.assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
+	}
+
+	@Test
 	public void scanSubscriber() {
 		CoreSubscriber<String> actual = new LambdaSubscriber<>(null, e -> {}, null, null);
 		FluxDoFinally.DoFinallySubscriber<String> test = new FluxDoFinally.DoFinallySubscriber<>(actual, st -> {});
@@ -388,6 +409,7 @@ public class FluxDoFinallyTest implements Consumer<SignalType> {
 
 		Assertions.assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
 		Assertions.assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(actual);
+		Assertions.assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 
 		Assertions.assertThat(test.scan(Scannable.Attr.CANCELLED)).isFalse();
 		Assertions.assertThat(test.scan(Scannable.Attr.TERMINATED)).isFalse();
@@ -476,18 +498,26 @@ public class FluxDoFinallyTest implements Consumer<SignalType> {
 	@Test
 	//see https://github.com/reactor/reactor-core/issues/951
 	public void gh951_withoutDoOnError() {
-		List<String> events = new ArrayList<>();
+		TestLogger testLogger = new TestLogger();
+		LoggerUtils.addAppender(testLogger, Operators.class);
+		try {
+			List<String> events = new ArrayList<>();
 
-		assertThatExceptionOfType(UnsupportedOperationException.class)
-		          .isThrownBy(Mono.just(true)
-		                          .map(this::throwError)
-		                          .doFinally(any -> events.add("doFinally " + any.toString()))
-		                          ::subscribe)
-		          .withMessage("java.lang.IllegalStateException: boom");
+			Mono.just(true)
+			    .map(this::throwError)
+			    .doFinally(any -> events.add("doFinally " + any.toString()))
+			    .subscribe();
 
-		Assertions.assertThat(events)
-		          .as("withoutDoOnError")
-		          .containsExactly("doFinally onError");
+			Assertions.assertThat(events)
+			          .as("withoutDoOnError")
+			          .containsExactly("doFinally onError");
+			Assertions.assertThat(testLogger.getErrContent())
+			          .contains("Operator called default onErrorDropped")
+			          .contains("reactor.core.Exceptions$ErrorCallbackNotImplemented: java.lang.IllegalStateException: boom");
+		}
+		finally {
+			LoggerUtils.resetAppender(Operators.class);
+		}
 	}
 
 	private Boolean throwError(Boolean x) {

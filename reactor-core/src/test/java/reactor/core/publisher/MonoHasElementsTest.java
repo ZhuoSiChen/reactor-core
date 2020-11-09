@@ -133,7 +133,7 @@ public class MonoHasElementsTest {
 	}
 
 	@Test
-	public void testHasElementUpstream() throws InterruptedException {
+	public void testHasElementUpstream() {
 		AtomicReference<Subscription> sub = new AtomicReference<>();
 
 		Mono.just("foo").hide()
@@ -149,7 +149,7 @@ public class MonoHasElementsTest {
 	}
 
 	@Test
-	public void testHasElementsUpstream() throws InterruptedException {
+	public void testHasElementsUpstream() {
 		AtomicReference<Subscription> sub = new AtomicReference<>();
 
 		Flux.just("foo", "bar").hide()
@@ -169,7 +169,7 @@ public class MonoHasElementsTest {
 	}
 
 	@Test
-	public void hasElementCancel() throws InterruptedException {
+	public void hasElementCancel() {
 		AtomicBoolean cancelled = new AtomicBoolean();
 
 		Mono.just("foo").hide()
@@ -183,7 +183,7 @@ public class MonoHasElementsTest {
 	}
 
 	@Test
-	public void hasElementsCancel() throws InterruptedException {
+	public void hasElementsCancel() {
 		AtomicBoolean cancelled = new AtomicBoolean();
 
 		Flux.just("foo", "bar").hide()
@@ -196,6 +196,20 @@ public class MonoHasElementsTest {
 	}
 
 	@Test
+	public void scanOperatorHasElement(){
+		MonoHasElement<Integer> test = new MonoHasElement<>(Mono.just(1));
+
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
+	}
+
+	@Test
+	public void scanOperatorHasElements(){
+		MonoHasElements<Integer> test = new MonoHasElements<>(Flux.just(1, 2, 3));
+
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
+	}
+
+	@Test
 	public void scanHasElements() {
 		CoreSubscriber<? super Boolean> actual = new LambdaMonoSubscriber<>(null, e -> {}, null, null);
 		MonoHasElements.HasElementsSubscriber<String> test = new MonoHasElements.HasElementsSubscriber<>(actual);
@@ -205,6 +219,7 @@ public class MonoHasElementsTest {
 		assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
 		assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(actual);
 		assertThat(test.scan(Scannable.Attr.PREFETCH)).isEqualTo(Integer.MAX_VALUE);
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 
 		assertThat(test.scan(Scannable.Attr.TERMINATED)).isFalse();
 		assertThat(test.scan(Scannable.Attr.CANCELLED)).isFalse();
@@ -250,6 +265,7 @@ public class MonoHasElementsTest {
 		assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
 		assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(actual);
 		assertThat(test.scan(Scannable.Attr.PREFETCH)).isEqualTo(Integer.MAX_VALUE);
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 
 		assertThat(test.scan(Scannable.Attr.TERMINATED)).isFalse();
 		assertThat(test.scan(Scannable.Attr.CANCELLED)).isFalse();

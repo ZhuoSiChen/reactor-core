@@ -17,14 +17,16 @@
 package reactor.core.publisher;
 
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import java.util.stream.Stream;
 
 import org.reactivestreams.Subscription;
+
 import reactor.core.CoreSubscriber;
 import reactor.core.Exceptions;
 import reactor.core.Scannable;
+import reactor.core.publisher.SinkManyBestEffort.DirectInner;
+import reactor.core.publisher.Sinks.EmitResult;
 import reactor.util.annotation.Nullable;
 import reactor.util.context.Context;
 
@@ -78,8 +80,13 @@ import reactor.util.context.Context;
  * </p>
  *
  * @param <T> the input and output value type
+ * @deprecated To be removed in 3.5, prefer clear cut usage of {@link Sinks}. Closest sink
+ * is {@link Sinks.MulticastSpec#directBestEffort() Sinks.many().multicast().directBestEffort()},
+ * except it doesn't terminate overflowing downstreams.
  */
-public final class DirectProcessor<T> extends FluxProcessor<T, T> {
+@Deprecated
+public final class DirectProcessor<T> extends FluxProcessor<T, T>
+		implements DirectInnerContainer<T> {
 
 	/**
 	 * Create a new {@link DirectProcessor}
@@ -92,20 +99,11 @@ public final class DirectProcessor<T> extends FluxProcessor<T, T> {
 		return new DirectProcessor<>();
 	}
 
-	@SuppressWarnings("rawtypes")
-	private static final DirectInner[] EMPTY = new DirectInner[0];
-
-	@SuppressWarnings("rawtypes")
-	private static final DirectInner[] TERMINATED = new DirectInner[0];
-
 	@SuppressWarnings("unchecked")
-	private volatile     DirectInner<T>[] subscribers = EMPTY;
+	private volatile     DirectInner<T>[]                                           subscribers = SinkManyBestEffort.EMPTY;
 	@SuppressWarnings("rawtypes")
-	private static final AtomicReferenceFieldUpdater<DirectProcessor, DirectInner[]>
-	                                      SUBSCRIBERS =
-			AtomicReferenceFieldUpdater.newUpdater(DirectProcessor.class,
-					DirectInner[].class,
-					"subscribers");
+	private static final AtomicReferenceFieldUpdater<DirectProcessor, DirectInner[]>SUBSCRIBERS =
+			AtomicReferenceFieldUpdater.newUpdater(DirectProcessor.class, DirectInner[].class, "subscribers");
 
 	Throwable error;
 
@@ -125,7 +123,7 @@ public final class DirectProcessor<T> extends FluxProcessor<T, T> {
 	@Override
 	public void onSubscribe(Subscription s) {
 		Objects.requireNonNull(s, "s");
-		if (subscribers != TERMINATED) {
+		if (subscribers != SinkManyBestEffort.TERMINATED) {
 			s.request(Long.MAX_VALUE);
 		}
 		else {
@@ -134,43 +132,109 @@ public final class DirectProcessor<T> extends FluxProcessor<T, T> {
 	}
 
 	@Override
-	public void onNext(T t) {
-		Objects.requireNonNull(t, "t");
+	public void onComplete() {
+		//no particular error condition handling for onComplete
+		@SuppressWarnings("unused") Sinks.EmitResult emitResult = tryEmitComplete();
+	}
 
-		DirectInner<T>[] inners = subscribers;
+	private void emitComplete() {
+		//no particular error condition handling for onComplete
+		@SuppressWarnings("unused") EmitResult emitResult = tryEmitComplete();
+	}
 
-		if (inners == TERMINATED) {
-			Operators.onNextDropped(t, currentContext());
-			return;
+	private EmitResult tryEmitComplete() {
+		@SuppressWarnings("unchecked")
+		DirectInner<T>[] inners = SUBSCRIBERS.getAndSet(this, SinkManyBestEffort.TERMINATED);
+
+		if (inners == SinkManyBestEffort.TERMINATED) {
+			return EmitResult.FAIL_TERMINATED;
 		}
 
-		for (DirectInner<T> s : inners) {
-			s.onNext(t);
+		for (DirectInner<?> s : inners) {
+			s.emitComplete();
 		}
+		return EmitResult.OK;
 	}
 
 	@Override
-	public void onError(Throwable t) {
+	public void onError(Throwable throwable) {
+		emitError(throwable);
+	}
+
+	private void emitError(Throwable error) {
+		Sinks.EmitResult result = tryEmitError(error);
+		if (result == EmitResult.FAIL_TERMINATED) {
+			Operators.onErrorDroppedMulticast(error, subscribers);
+		}
+	}
+
+	private Sinks.EmitResult tryEmitError(Throwable t) {
 		Objects.requireNonNull(t, "t");
 
-		DirectInner<T>[] inners = subscribers;
+		@SuppressWarnings("unchecked")
+		DirectInner<T>[] inners = SUBSCRIBERS.getAndSet(this, SinkManyBestEffort.TERMINATED);
 
-		if (inners == TERMINATED) {
-			Operators.onErrorDropped(t, currentContext());
-			return;
+		if (inners == SinkManyBestEffort.TERMINATED) {
+			return EmitResult.FAIL_TERMINATED;
 		}
 
 		error = t;
-		for (DirectInner<?> s : SUBSCRIBERS.getAndSet(this, TERMINATED)) {
-			s.onError(t);
+		for (DirectInner<?> s : inners) {
+			s.emitError(t);
+		}
+		return Sinks.EmitResult.OK;
+	}
+
+	private void emitNext(T value) {
+		switch (tryEmitNext(value)) {
+			case FAIL_ZERO_SUBSCRIBER:
+				//we want to "discard" without rendering the sink terminated.
+				// effectively NO-OP cause there's no subscriber, so no context :(
+				break;
+			case FAIL_OVERFLOW:
+				Operators.onDiscard(value, currentContext());
+				//the emitError will onErrorDropped if already terminated
+				emitError(Exceptions.failWithOverflow("Backpressure overflow during Sinks.Many#emitNext"));
+				break;
+			case FAIL_CANCELLED:
+				Operators.onDiscard(value, currentContext());
+				break;
+			case FAIL_TERMINATED:
+				Operators.onNextDroppedMulticast(value, subscribers);
+				break;
+			case OK:
+				break;
+			default:
+				throw new IllegalStateException("unexpected return code");
 		}
 	}
 
 	@Override
-	public void onComplete() {
-		for (DirectInner<?> s : SUBSCRIBERS.getAndSet(this, TERMINATED)) {
-			s.onComplete();
+	public void onNext(T t) {
+		emitNext(t);
+	}
+
+	private EmitResult tryEmitNext(T t) {
+		Objects.requireNonNull(t, "t");
+
+		DirectInner<T>[] inners = subscribers;
+
+		if (inners == SinkManyBestEffort.TERMINATED) {
+			return EmitResult.FAIL_TERMINATED;
 		}
+		if (inners == SinkManyBestEffort.EMPTY) {
+			return Sinks.EmitResult.FAIL_ZERO_SUBSCRIBER;
+		}
+
+		for (DirectInner<T> s : inners) {
+			s.directEmitNext(t);
+		}
+		return Sinks.EmitResult.OK;
+	}
+
+	@Override
+	protected boolean isIdentityProcessor() {
+		return true;
 	}
 
 	@Override
@@ -181,7 +245,7 @@ public final class DirectProcessor<T> extends FluxProcessor<T, T> {
 		actual.onSubscribe(p);
 
 		if (add(p)) {
-			if (p.cancelled) {
+			if (p.isCancelled()) {
 				remove(p);
 			}
 		}
@@ -203,7 +267,7 @@ public final class DirectProcessor<T> extends FluxProcessor<T, T> {
 
 	@Override
 	public boolean isTerminated() {
-		return TERMINATED == subscribers;
+		return SinkManyBestEffort.TERMINATED == subscribers;
 	}
 
 	@Override
@@ -211,15 +275,16 @@ public final class DirectProcessor<T> extends FluxProcessor<T, T> {
 		return subscribers.length;
 	}
 
-	boolean add(DirectInner<T> s) {
+	@Override
+	public boolean add(DirectInner<T> s) {
 		DirectInner<T>[] a = subscribers;
-		if (a == TERMINATED) {
+		if (a == SinkManyBestEffort.TERMINATED) {
 			return false;
 		}
 
 		synchronized (this) {
 			a = subscribers;
-			if (a == TERMINATED) {
+			if (a == SinkManyBestEffort.TERMINATED) {
 				return false;
 			}
 			int len = a.length;
@@ -234,16 +299,17 @@ public final class DirectProcessor<T> extends FluxProcessor<T, T> {
 		}
 	}
 
+	@Override
 	@SuppressWarnings("unchecked")
-	void remove(DirectInner<T> s) {
+	public void remove(DirectInner<T> s) {
 		DirectInner<T>[] a = subscribers;
-		if (a == TERMINATED || a == EMPTY) {
+		if (a == SinkManyBestEffort.TERMINATED || a == SinkManyBestEffort.EMPTY) {
 			return;
 		}
 
 		synchronized (this) {
 			a = subscribers;
-			if (a == TERMINATED || a == EMPTY) {
+			if (a == SinkManyBestEffort.TERMINATED || a == SinkManyBestEffort.EMPTY) {
 				return;
 			}
 			int len = a.length;
@@ -260,7 +326,7 @@ public final class DirectProcessor<T> extends FluxProcessor<T, T> {
 				return;
 			}
 			if (len == 1) {
-				subscribers = EMPTY;
+				subscribers = SinkManyBestEffort.EMPTY;
 				return;
 			}
 
@@ -275,85 +341,16 @@ public final class DirectProcessor<T> extends FluxProcessor<T, T> {
 	@Override
 	public boolean hasDownstreams() {
 		DirectInner<T>[] s = subscribers;
-		return s != EMPTY && s != TERMINATED;
+		return s != SinkManyBestEffort.EMPTY && s != SinkManyBestEffort.TERMINATED;
 	}
 
 	@Override
 	@Nullable
 	public Throwable getError() {
-		if (subscribers == TERMINATED) {
+		if (subscribers == SinkManyBestEffort.TERMINATED) {
 			return error;
 		}
 		return null;
 	}
 
-	static final class DirectInner<T> implements InnerProducer<T> {
-
-		final CoreSubscriber<? super T> actual;
-
-		final DirectProcessor<T> parent;
-
-		volatile boolean cancelled;
-
-		volatile long requested;
-		@SuppressWarnings("rawtypes")
-		static final AtomicLongFieldUpdater<DirectInner> REQUESTED =
-				AtomicLongFieldUpdater.newUpdater(DirectInner.class, "requested");
-
-		DirectInner(CoreSubscriber<? super T> actual, DirectProcessor<T> parent) {
-			this.actual = actual;
-			this.parent = parent;
-		}
-
-		@Override
-		public void request(long n) {
-			if (Operators.validate(n)) {
-				Operators.addCap(REQUESTED, this, n);
-			}
-		}
-
-		@Override
-		public void cancel() {
-			if (!cancelled) {
-				cancelled = true;
-				parent.remove(this);
-			}
-		}
-
-		@Override
-		@Nullable
-		public Object scanUnsafe(Attr key) {
-			if (key == Attr.PARENT) return parent;
-			if (key == Attr.CANCELLED) return cancelled;
-
-			return InnerProducer.super.scanUnsafe(key);
-		}
-
-		@Override
-		public CoreSubscriber<? super T> actual() {
-			return actual;
-		}
-
-		void onNext(T value) {
-			if (requested != 0L) {
-				actual.onNext(value);
-				if (requested != Long.MAX_VALUE) {
-					REQUESTED.decrementAndGet(this);
-				}
-				return;
-			}
-			parent.remove(this);
-			actual.onError(Exceptions.failWithOverflow(
-					"Can't deliver value due to lack of requests"));
-		}
-
-		void onError(Throwable e) {
-			actual.onError(e);
-		}
-
-		void onComplete() {
-			actual.onComplete();
-		}
-
-	}
 }

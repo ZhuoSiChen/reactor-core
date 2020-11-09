@@ -632,7 +632,7 @@ public abstract class Operators {
 		}
 		if (hook == null) {
 			log.error("Operator called default onErrorDropped", e);
-			throw Exceptions.bubble(e);
+			return;
 		}
 		hook.accept(e);
 	}
@@ -873,13 +873,13 @@ public abstract class Operators {
 	 * @return a {@link Throwable} to propagate through onError if the strategy is
 	 * terminal and cancelled the subscription, null if not.
 	 */
-	public static <T> Throwable onNextInnerError(Throwable error, Context context, Subscription subscriptionForCancel) {
+	public static <T> Throwable onNextInnerError(Throwable error, Context context, @Nullable Subscription subscriptionForCancel) {
 		error = unwrapOnNextError(error);
 		OnNextFailureStrategy strategy = onNextErrorStrategy(context);
 		if (strategy.test(error, null)) {
 			//some strategies could still return an exception, eg. if the consumer throws
 			Throwable t = strategy.process(error, null, context);
-			if (t != null) {
+			if (t != null && subscriptionForCancel != null) {
 				subscriptionForCancel.cancel();
 			}
 			return t;
@@ -1286,15 +1286,16 @@ public abstract class Operators {
 	}
 
 	/**
-	 * If the actual {@link CoreSubscriber} is not {@link Fuseable.ConditionalSubscriber},
+	 * If the actual {@link CoreSubscriber} is not {@link reactor.core.Fuseable.ConditionalSubscriber},
 	 * it will apply an adapter which directly maps all
-	 * {@link Fuseable.ConditionalSubscriber#tryOnNext(T)} to {@link CoreSubscriber#onNext(T)}
+	 * {@link reactor.core.Fuseable.ConditionalSubscriber#tryOnNext(Object)} to
+	 * {@link Subscriber#onNext(Object)}
 	 * and always returns true as the result
 	 *
 	 * @param <T> passed subscriber type
 	 *
 	 * @param actual the {@link Subscriber} to adapt
-	 * @return a potentially adapted {@link Fuseable.ConditionalSubscriber}
+	 * @return a potentially adapted {@link reactor.core.Fuseable.ConditionalSubscriber}
 	 */
 	@SuppressWarnings("unchecked")
 	public static <T> Fuseable.ConditionalSubscriber<? super  T> toConditionalSubscriber(CoreSubscriber<? super T> actual) {
@@ -1314,9 +1315,9 @@ public abstract class Operators {
 
 
 
-	static Context multiSubscribersContext(InnerProducer<?>[] subscribers){
-		if (subscribers.length > 0){
-			return subscribers[0].actual().currentContext();
+	static Context multiSubscribersContext(InnerProducer<?>[] multicastInners){
+		if (multicastInners.length > 0){
+			return multicastInners[0].actual().currentContext();
 		}
 		return Context.empty();
 	}
@@ -1347,18 +1348,18 @@ public abstract class Operators {
 		}
 	}
 
-
 	/**
 	 * An unexpected exception is about to be dropped from an operator that has multiple
 	 * subscribers (and thus potentially multiple Context with local onErrorDropped handlers).
 	 *
 	 * @param e the dropped exception
+	 * @param multicastInners the inner targets of the multicast
 	 * @see #onErrorDropped(Throwable, Context)
 	 */
-	static void onErrorDroppedMulticast(Throwable e) {
+	static void onErrorDroppedMulticast(Throwable e, InnerProducer<?>[] multicastInners) {
 		//TODO let this method go through multiple contexts and use their local handlers
 		//if at least one has no local handler, also call onErrorDropped(e, Context.empty())
-		onErrorDropped(e, Context.empty());
+		onErrorDropped(e, multiSubscribersContext(multicastInners));
 	}
 
 	/**
@@ -1370,12 +1371,13 @@ public abstract class Operators {
 	 *
 	 * @param <T> the dropped value type
 	 * @param t the dropped data
+	 * @param multicastInners the inner targets of the multicast
 	 * @see #onNextDropped(Object, Context)
 	 */
-	static <T> void onNextDroppedMulticast(T t) {
+	static <T> void onNextDroppedMulticast(T t,	InnerProducer<?>[] multicastInners) {
 		//TODO let this method go through multiple contexts and use their local handlers
 		//if at least one has no local handler, also call onNextDropped(t, Context.empty())
-		onNextDropped(t, Context.empty());
+		onNextDropped(t, multiSubscribersContext(multicastInners));
 	}
 
 	static <T> long producedCancellable(AtomicLongFieldUpdater<T> updater, T instance, long n) {

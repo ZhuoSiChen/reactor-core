@@ -23,11 +23,14 @@ import java.util.stream.Stream;
 import org.reactivestreams.Processor;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscriber;
+
 import reactor.core.CoreSubscriber;
 import reactor.core.Disposable;
 import reactor.core.Scannable;
 import reactor.util.annotation.Nullable;
 import reactor.util.context.Context;
+
+import static reactor.core.publisher.Sinks.Many;
 
 /**
  * A base processor that exposes {@link Flux} API for {@link Processor}.
@@ -38,9 +41,12 @@ import reactor.util.context.Context;
  *
  * @param <IN> the input value type
  * @param <OUT> the output value type
+ * @deprecated Processors will be removed in 3.5. Prefer using {@link Sinks.Many} instead,
+ *  * or see https://github.com/reactor/reactor-core/issues/2431 for alternatives
  */
+@Deprecated
 public abstract class FluxProcessor<IN, OUT> extends Flux<OUT>
-		implements Processor<IN, OUT>, CoreSubscriber<IN>, Scannable, Disposable {
+		implements Processor<IN, OUT>, CoreSubscriber<IN>, Scannable, Disposable, ContextHolder {
 
 	/**
 	 * Build a {@link FluxProcessor} whose data are emitted by the most recent emitted {@link Publisher}.
@@ -52,13 +58,14 @@ public abstract class FluxProcessor<IN, OUT> extends Flux<OUT>
 	 *
 	 * @param <T> the produced type
 	 * @return a {@link FluxProcessor} accepting publishers and producing T
+	 * @deprecated should use {@link Sinks}, {@link Many#asFlux()} and {@link Flux#switchOnNext(Publisher)}. To be removed in 3.5.0.
 	 */
+	@Deprecated
 	public static <T> FluxProcessor<Publisher<? extends T>, T> switchOnNext() {
 		UnicastProcessor<Publisher<? extends T>> emitter = UnicastProcessor.create();
 		FluxProcessor<Publisher<? extends T>, T> p = FluxProcessor.wrap(emitter, switchOnNext(emitter));
 		return p;
 	}
-
 	/**
 	 * Transform a receiving {@link Subscriber} and a producing {@link Publisher} in a logical {@link FluxProcessor}.
 	 * The link between the passed upstream and returned downstream will not be created automatically, e.g. not
@@ -177,7 +184,7 @@ public abstract class FluxProcessor<IN, OUT> extends Flux<OUT>
 	 * Create a {@link FluxProcessor} that safely gates multi-threaded producer
 	 * {@link Subscriber#onNext(Object)}.
 	 *
-	 * @reactor.discard The resulting processor discards elements received from the source
+	 * <p><strong>Discard Support:</strong> The resulting processor discards elements received from the source
 	 * {@link Publisher} (if any) when it cancels subscription to said source.
 	 *
 	 * @return a serializing {@link FluxProcessor}
@@ -201,7 +208,10 @@ public abstract class FluxProcessor<IN, OUT> extends Flux<OUT>
 	 * </ul>
 	 *
 	 * @return a serializing {@link FluxSink}
+	 * @deprecated To be removed in 3.5, prefer clear cut usage of {@link Sinks}
+	 * through the {@link Sinks#many()} spec.
 	 */
+	@Deprecated
 	public final FluxSink<IN> sink() {
 		return sink(FluxSink.OverflowStrategy.IGNORE);
 	}
@@ -225,7 +235,10 @@ public abstract class FluxProcessor<IN, OUT> extends Flux<OUT>
 	 * for the
 	 * available strategies
 	 * @return a serializing {@link FluxSink}
+	 * @deprecated To be removed in 3.5, prefer clear cut usage of {@link Sinks}
+	 * through the {@link Sinks#many()} spec.
 	 */
+	@Deprecated
 	public final FluxSink<IN> sink(FluxSink.OverflowStrategy strategy) {
 		Objects.requireNonNull(strategy, "strategy");
 		if (getBufferSize() == Integer.MAX_VALUE){
@@ -240,7 +253,7 @@ public abstract class FluxProcessor<IN, OUT> extends Flux<OUT>
 			return s;
 		}
 		if (serializeAlways())
-			return new FluxCreate.SerializedSink<>(s);
+			return new FluxCreate.SerializedFluxSink<>(s);
 		else
 			return new FluxCreate.SerializeOnRequestSink<>(s);
 	}
@@ -253,5 +266,14 @@ public abstract class FluxProcessor<IN, OUT> extends Flux<OUT>
 	 */
 	protected boolean serializeAlways() {
 		return true;
+	}
+
+	/**
+	 * Return true if {@code FluxProcessor<T, T>}
+	 *
+	 * @return true if {@code FluxProcessor<T, T>}
+	 */
+	protected boolean isIdentityProcessor() {
+		return false;
 	}
 }

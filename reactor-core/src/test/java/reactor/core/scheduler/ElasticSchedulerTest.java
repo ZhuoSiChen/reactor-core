@@ -35,12 +35,14 @@ import reactor.util.Logger;
 import reactor.util.Loggers;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 /**
  * @author Stephane Maldini
  * @author Simon Baslé
  */
+@SuppressWarnings("deprecation")
 public class ElasticSchedulerTest extends AbstractSchedulerTest {
 
 	private static final Logger LOGGER = Loggers.getLogger(ElasticSchedulerTest.class);
@@ -50,11 +52,23 @@ public class ElasticSchedulerTest extends AbstractSchedulerTest {
 		return Schedulers.newElastic("ElasticSchedulerTest");
 	}
 
+	@Override
+	protected boolean shouldCheckInterrupted() {
+		return true;
+	}
+
+	@Override
+	protected boolean shouldCheckSupportRestart() {
+		return true;
+	}
+
 	@Test
-	public void unsupportedStart() {
-		assertThatExceptionOfType(UnsupportedOperationException.class).isThrownBy(() -> {
-			Schedulers.elastic().start();
-		});
+	public void bothStartAndRestartDoNotThrow() {
+		Scheduler scheduler = afterTest.autoDispose(scheduler());
+		assertThatCode(scheduler::start).as("start").doesNotThrowAnyException();
+
+		scheduler.dispose();
+		assertThatCode(scheduler::start).as("restart").doesNotThrowAnyException();
 	}
 
 	@Test
@@ -62,11 +76,6 @@ public class ElasticSchedulerTest extends AbstractSchedulerTest {
 		assertThatExceptionOfType(IllegalArgumentException.class).isThrownBy(() -> {
 			Schedulers.newElastic("test", -1);
 		});
-	}
-
-	@Override
-	protected boolean shouldCheckInterrupted() {
-		return true;
 	}
 
 	@Test
