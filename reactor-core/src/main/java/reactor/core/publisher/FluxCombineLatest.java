@@ -233,7 +233,7 @@ final class FluxCombineLatest<T, R> extends Flux<R> implements Fuseable, SourceP
 			this.combiner = combiner;
 			@SuppressWarnings("unchecked") CombineLatestInner<T>[] a =
 					new CombineLatestInner[n];
-			//把每个 subscriber 对应一个 subscription
+			//给每个源 对应一个subscription  然后把this 当成订阅者 传递下去
 			for (int i = 0; i < n; i++) {
 				a[i] = new CombineLatestInner<>(this, i, prefetch);
 			}
@@ -626,6 +626,7 @@ final class FluxCombineLatest<T, R> extends Flux<R> implements Fuseable, SourceP
 
 		void requestOne() {
 			int p = produced + 1;
+			//limit == prefetch
 			if (p == limit) {
 				produced = 0;
 				s.request(p);
