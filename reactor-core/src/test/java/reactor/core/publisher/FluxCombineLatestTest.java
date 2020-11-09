@@ -133,7 +133,7 @@ public class FluxCombineLatestTest extends FluxOperatorTest<String, String> {
 	public void singleSourceIsMapped() {
 
 		AssertSubscriber<String> ts = AssertSubscriber.create();
-		Publisher<Integer>[] arr = new Publisher[2];
+//		Publisher<Integer>[] arr = new Publisher[2];
 //		Flux.combineLatest(arr,)
 		Flux.combineLatest(a -> a[0].toString(), Flux.just(1));
 //		    .subscribe(ts);

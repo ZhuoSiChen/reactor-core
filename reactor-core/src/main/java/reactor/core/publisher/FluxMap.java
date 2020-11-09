@@ -50,7 +50,7 @@ final class FluxMap<T, R> extends InternalFluxOperator<T, R> {
 		super(source);
 		this.mapper = Objects.requireNonNull(mapper, "mapper");
 	}
-
+	//订阅或返回？
 	@Override
 	@SuppressWarnings("unchecked")
 	public CoreSubscriber<? super T> subscribeOrReturn(CoreSubscriber<? super R> actual) {
@@ -59,6 +59,7 @@ final class FluxMap<T, R> extends InternalFluxOperator<T, R> {
 					(Fuseable.ConditionalSubscriber<? super R>) actual;
 			return new MapConditionalSubscriber<>(cs, mapper);
 		}
+		// actual 是源  mapper 是个 function 返回一个 operator
 		return new MapSubscriber<>(actual, mapper);
 	}
 

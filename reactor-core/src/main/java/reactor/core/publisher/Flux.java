@@ -5984,7 +5984,8 @@ public abstract class Flux<T> implements CorePublisher<T> {
 	 * to each item.
 	 * <p>
 	 * <img class="marble" src="doc-files/marbles/mapForFlux.svg" alt="">
-	 *
+	 *	此为同步的转换操作
+	 *  V 目标类型
 	 * @param mapper the synchronous transforming {@link Function}
 	 * @param <V> the transformed type
 	 *
@@ -8311,6 +8312,7 @@ public abstract class Flux<T> implements CorePublisher<T> {
 		CoreSubscriber subscriber = Operators.toCoreSubscriber(actual);
 
 		try {
+			//判断 源是否是优化过得operator
 			if (publisher instanceof OptimizableOperator) {
 				OptimizableOperator operator = (OptimizableOperator) publisher;
 				while (true) {
