@@ -8,6 +8,7 @@ Consumer<Integer> consumer = new Consumer<Integer>() {
 		};
 	};
 intFlux.subscribe(consumer)
+	//intFlux 作为publisher
 	intFlux.subscribeWith(new LambdaSubscriber<>(consumer, errorConsumer,
         				completeConsumer,
         				null,
@@ -27,4 +28,13 @@ intFlux.subscribe(consumer)
 FluxNever.subscribe(consumer)
 	consumer.onSubscribe(
 
-MonoNever
+FluxMap fluxmap = Flux.map(mapper);
+	// this 是源
+	new FluxMap<>(this, mapper)
+		//FluxMap 有下面的方法
+		//reactor 框架的优化回调
+			subscribeOrReturn()
+// 当 no util you subscribe的subscribe(Subscriber)时候
+//当源调用subscribe(Subscriber) 方法的时候
+// 会去 subscribeOrReturn() 判断
+fluxmap.subscribe(Subscriber)
