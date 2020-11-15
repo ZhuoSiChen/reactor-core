@@ -22,8 +22,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import reactor.core.Scannable;
 import reactor.test.StepVerifier;
 import reactor.test.subscriber.AssertSubscriber;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -102,5 +105,12 @@ public class MonoRepeatWhenEmptyTest {
                 .thenAwait()
                 .thenCancel()
                 .verify();
+    }
+
+    @Test
+    public void scanOperator(){
+        MonoRepeatWhen<Integer> test = new MonoRepeatWhen<>(Mono.just(1), o -> Mono.empty());
+
+        assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
     }
 }

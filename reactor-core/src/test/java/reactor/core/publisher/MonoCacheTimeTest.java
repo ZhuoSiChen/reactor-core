@@ -24,7 +24,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
 
+import org.reactivestreams.Subscription;
+import reactor.core.CoreSubscriber;
 import reactor.core.Disposable;
+import reactor.core.Scannable;
 import reactor.core.scheduler.Schedulers;
 import reactor.test.StepVerifier;
 import reactor.test.publisher.MonoOperatorTest;
@@ -32,6 +35,7 @@ import reactor.test.publisher.TestPublisher;
 import reactor.test.scheduler.VirtualTimeScheduler;
 import reactor.test.util.RaceTestUtils;
 import reactor.util.context.Context;
+import reactor.util.context.ContextView;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
@@ -496,7 +500,8 @@ public class MonoCacheTimeTest extends MonoOperatorTest<String, String> {
 		AtomicInteger subCount = new AtomicInteger();
 		Mono<Integer> source = Mono.defer(() -> Mono.just(subCount.incrementAndGet()));
 
-		Mono<Integer> cached = source.cache(Duration.ofMillis(100), vts)
+		// Note: use sub-millis duration after gh-1734
+		Mono<Integer> cached = source.cache(Duration.ofNanos(100), vts)
 		                             .hide();
 
 		StepVerifier.create(cached)
@@ -505,7 +510,15 @@ public class MonoCacheTimeTest extends MonoOperatorTest<String, String> {
 		            .as("first subscription caches 1")
 		            .verifyComplete();
 
-		vts.advanceTimeBy(Duration.ofMillis(110));
+		vts.advanceTimeBy(Duration.ofNanos(50));
+
+		StepVerifier.create(cached)
+				.expectNoFusionSupport()
+				.expectNext(1)
+				.as("cached value returned before ttl")
+				.verifyComplete();
+
+		vts.advanceTimeBy(Duration.ofNanos(60));
 
 		StepVerifier.create(cached)
 		            .expectNext(2)
@@ -755,16 +768,16 @@ public class MonoCacheTimeTest extends MonoOperatorTest<String, String> {
 	public void contextFromFirstSubscriberCached() {
 		AtomicInteger contextFillCount = new AtomicInteger();
 		VirtualTimeScheduler vts = VirtualTimeScheduler.create();
-		Mono<Context> cached = Mono.subscriberContext()
-		                           .as(m -> new MonoCacheTime<>(m, Duration.ofMillis(500), vts))
-		                           .subscriberContext(ctx -> ctx.put("a", "GOOD" + contextFillCount.incrementAndGet()));
+		Mono<ContextView> cached = Mono.deferContextual(Mono::just)
+		                               .as(m -> new MonoCacheTime<>(m, Duration.ofMillis(500), vts))
+		                               .contextWrite(ctx -> ctx.put("a", "GOOD" + contextFillCount.incrementAndGet()));
 
 		//at first pass, the context is captured
 		String cacheMiss = cached.map(x -> x.getOrDefault("a", "BAD")).block();
 		assertThat(cacheMiss).as("cacheMiss").isEqualTo("GOOD1");
 		assertThat(contextFillCount).as("cacheMiss").hasValue(1);
 
-		//at second subscribe, the Context fill attempt is still done, but ultimately ignored since Mono.subscriberContext() result is cached
+		//at second subscribe, the Context fill attempt is still done, but ultimately ignored since Mono.deferContextual(Mono::just) result is cached
 		String cacheHit = cached.map(x -> x.getOrDefault("a", "BAD")).block();
 		assertThat(cacheHit).as("cacheHit").isEqualTo("GOOD1"); //value from the cache
 		assertThat(contextFillCount).as("cacheHit").hasValue(2); //function was still invoked
@@ -849,6 +862,42 @@ public class MonoCacheTimeTest extends MonoOperatorTest<String, String> {
 
 		d2.dispose();
 		assertThat(cancelled.get()).as("when both cancelled").isEqualTo(0);
+	}
+
+	@Test
+	public void scanOperator(){
+	    Mono<Integer> source = Mono.just(1);
+		MonoCacheTime<Integer> test = new MonoCacheTime<>(source);
+
+		assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(source);
+		assertThat(test.scan(Scannable.Attr.PREFETCH)).isEqualTo(Integer.MAX_VALUE);
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
+	}
+
+	@Test
+	public void scanCoordinatorSubscriber(){
+		MonoCacheTime<Integer> main = new MonoCacheTime<>(Mono.just(1));
+		MonoCacheTime.CoordinatorSubscriber<Integer> test = new MonoCacheTime.CoordinatorSubscriber<>(main);
+
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
+	}
+
+	@Test
+	public void scanSubscriber() {
+		CoreSubscriber<Boolean> actual = new LambdaMonoSubscriber<>(null, e -> {}, null, null);
+		MonoCacheTime.CacheMonoSubscriber<Boolean> test = new MonoCacheTime.CacheMonoSubscriber<>(actual);
+
+		Subscription parent = Operators.emptySubscription();
+		test.onSubscribe(parent);
+
+
+		assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(actual);
+		assertThat(test.scan(Scannable.Attr.PREFETCH)).isEqualTo(Integer.MAX_VALUE);
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
+
+		assertThat(test.scan(Scannable.Attr.CANCELLED)).isFalse();
+		test.cancel();
+		assertThat(test.scan(Scannable.Attr.CANCELLED)).isTrue();
 	}
 
 }

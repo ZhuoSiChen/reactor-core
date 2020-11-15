@@ -17,8 +17,10 @@ package reactor.core.publisher;
 
 import org.junit.jupiter.api.Test;
 import org.reactivestreams.Subscription;
+
 import reactor.test.StepVerifier;
 import reactor.util.context.Context;
+import reactor.util.context.ContextView;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -49,7 +51,7 @@ public class SignalTest {
 		Context context = Context.of("foo", "bar");
 		Signal<Integer> s = Signal.complete(context);
 
-		assertThat(s.getContext().isEmpty()).as("has context").isFalse();
+		assertThat(s.getContextView().isEmpty()).as("has context").isFalse();
 
 		assertThat(s.isOnComplete()).isTrue();
 		assertThat(s.isOnSubscribe()).isFalse();
@@ -83,7 +85,7 @@ public class SignalTest {
 		Context context = Context.of("foo", "bar");
 		Signal<Integer> s = Signal.error(e, context);
 
-		assertThat(s.getContext().isEmpty()).as("has context").isFalse();
+		assertThat(s.getContextView().isEmpty()).as("has context").isFalse();
 
 		assertThat(s.isOnComplete()).isFalse();
 		assertThat(s.isOnSubscribe()).isFalse();
@@ -120,7 +122,7 @@ public class SignalTest {
 		Context context = Context.of("foo", "bar");
 		Signal<Integer> s = Signal.next(1, context);
 
-		assertThat(s.getContext().isEmpty()).as("has context").isFalse();
+		assertThat(s.getContextView().isEmpty()).as("has context").isFalse();
 
 		assertThat(s.isOnComplete()).isFalse();
 		assertThat(s.isOnSubscribe()).isFalse();
@@ -159,7 +161,7 @@ public class SignalTest {
 		Context context = Context.of("foo", "bar");
 		Signal<Integer> s = Signal.subscribe(Operators.emptySubscription(), context);
 
-		assertThat(s.getContext().isEmpty()).as("has context").isFalse();
+		assertThat(s.getContextView().isEmpty()).as("has context").isFalse();
 
 		assertThat(s.isOnComplete()).isFalse();
 		assertThat(s.isOnSubscribe()).isTrue();
@@ -344,7 +346,7 @@ public class SignalTest {
 			}
 
 			@Override
-			public Context getContext() {
+			public ContextView getContextView() {
 				return Context.empty();
 			}
 
@@ -360,8 +362,8 @@ public class SignalTest {
 		Signal<String> next1 = Signal.next("foo");
 		Signal<String> next2 = Signal.next("foo", Context.of("bar", "baz"));
 
-		assertThat(next1.getContext().isEmpty()).as("next1 context empty").isTrue();
-		assertThat(next2.getContext().isEmpty()).as("next2 context not empty").isFalse();
+		assertThat(next1.getContextView().isEmpty()).as("next1 context empty").isTrue();
+		assertThat(next2.getContextView().isEmpty()).as("next2 context not empty").isFalse();
 		assertThat(next1).isEqualTo(next2);
 	}
 }

@@ -26,6 +26,7 @@ import java.util.stream.Stream;
 
 import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
+
 import reactor.core.CoreSubscriber;
 import reactor.core.Disposable;
 import reactor.core.Disposables;
@@ -41,9 +42,10 @@ final class FluxWindowTimeout<T> extends InternalFluxOperator<T, Flux<T>> {
 
 	final int            maxSize;
 	final long           timespan;
+	final TimeUnit       unit;
 	final Scheduler      timer;
 
-	FluxWindowTimeout(Flux<T> source, int maxSize, long timespan, Scheduler timer) {
+	FluxWindowTimeout(Flux<T> source, int maxSize, long timespan, TimeUnit unit, Scheduler timer) {
 		super(source);
 		if (timespan <= 0) {
 			throw new IllegalArgumentException("Timeout period must be strictly positive");
@@ -53,19 +55,21 @@ final class FluxWindowTimeout<T> extends InternalFluxOperator<T, Flux<T>> {
 		}
 		this.timer = Objects.requireNonNull(timer, "Timer");
 		this.timespan = timespan;
+		this.unit = Objects.requireNonNull(unit, "unit");
 		this.maxSize = maxSize;
 	}
 
 	@Override
 	public CoreSubscriber<? super T> subscribeOrReturn(CoreSubscriber<? super Flux<T>> actual) {
 		return new WindowTimeoutSubscriber<>(actual, maxSize,
-				timespan,
+				timespan, unit,
 				timer);
 	}
 
 	@Override
 	public Object scanUnsafe(Attr key) {
 		if (key == Attr.RUN_ON) return timer;
+		if (key == Attr.RUN_STYLE) return Attr.RunStyle.ASYNC;
 
 		return super.scanUnsafe(key);
 	}
@@ -74,6 +78,7 @@ final class FluxWindowTimeout<T> extends InternalFluxOperator<T, Flux<T>> {
 
 		final CoreSubscriber<? super Flux<T>> actual;
 		final long                            timespan;
+		final TimeUnit                        unit;
 		final Scheduler                       scheduler;
 		final int                             maxSize;
 		final Scheduler.Worker                worker;
@@ -100,7 +105,7 @@ final class FluxWindowTimeout<T> extends InternalFluxOperator<T, Flux<T>> {
 
 		Subscription s;
 
-		UnicastProcessor<T> window;
+		Sinks.Many<T> window;
 
 		volatile boolean terminated;
 
@@ -112,10 +117,12 @@ final class FluxWindowTimeout<T> extends InternalFluxOperator<T, Flux<T>> {
 		WindowTimeoutSubscriber(CoreSubscriber<? super Flux<T>> actual,
 				int maxSize,
 				long timespan,
+				TimeUnit unit,
 				Scheduler scheduler) {
 			this.actual = actual;
 			this.queue = Queues.unboundedMultiproducer().get();
 			this.timespan = timespan;
+			this.unit = unit;
 			this.scheduler = scheduler;
 			this.maxSize = maxSize;
 			this.worker = scheduler.createWorker();
@@ -128,8 +135,8 @@ final class FluxWindowTimeout<T> extends InternalFluxOperator<T, Flux<T>> {
 
 		@Override
 		public Stream<? extends Scannable> inners() {
-			UnicastProcessor<T> w = window;
-			return w == null ? Stream.empty() : Stream.of(w);
+			Sinks.Many<T> w = window;
+			return w == null ? Stream.empty() : Stream.of(Scannable.from(w));
 		}
 
 		@Override
@@ -141,6 +148,7 @@ final class FluxWindowTimeout<T> extends InternalFluxOperator<T, Flux<T>> {
 			if (key == Attr.CAPACITY) return maxSize;
 			if (key == Attr.BUFFERED) return queue.size();
 			if (key == Attr.RUN_ON) return worker;
+			if (key == Attr.RUN_STYLE) return Attr.RunStyle.ASYNC;
 			return InnerOperator.super.scanUnsafe(key);
 		}
 
@@ -157,12 +165,12 @@ final class FluxWindowTimeout<T> extends InternalFluxOperator<T, Flux<T>> {
 					return;
 				}
 
-				UnicastProcessor<T> w = UnicastProcessor.create();
+				Sinks.Many<T> w = Sinks.unsafe().many().unicast().onBackpressureBuffer();
 				window = w;
 
 				long r = requested;
 				if (r != 0L) {
-					a.onNext(w);
+					a.onNext(w.asFlux());
 					if (r != Long.MAX_VALUE) {
 						REQUESTED.decrementAndGet(this);
 					}
@@ -182,7 +190,7 @@ final class FluxWindowTimeout<T> extends InternalFluxOperator<T, Flux<T>> {
 		Disposable newPeriod() {
 			try {
 				return worker.schedulePeriodically(new ConsumerIndexHolder(producerIndex,
-						this), timespan, timespan, TimeUnit.MILLISECONDS);
+						this), timespan, timespan, unit);
 			}
 			catch (Exception e) {
 				actual.onError(Operators.onRejectedExecution(e, s, null, null, actual.currentContext()));
@@ -197,8 +205,8 @@ final class FluxWindowTimeout<T> extends InternalFluxOperator<T, Flux<T>> {
 			}
 
 			if (WIP.get(this) == 0 && WIP.compareAndSet(this, 0, 1)) {
-				UnicastProcessor<T> w = window;
-				w.onNext(t);
+				Sinks.Many<T> w = window;
+				w.emitNext(t, Sinks.EmitFailureHandler.FAIL_FAST);
 
 				int c = count + 1;
 
@@ -206,14 +214,14 @@ final class FluxWindowTimeout<T> extends InternalFluxOperator<T, Flux<T>> {
 					producerIndex++;
 					count = 0;
 
-					w.onComplete();
+					w.emitComplete(Sinks.EmitFailureHandler.FAIL_FAST);
 
 					long r = requested;
 
 					if (r != 0L) {
-						w = UnicastProcessor.create();
+						w = Sinks.unsafe().many().unicast().onBackpressureBuffer();
 						window = w;
-						actual.onNext(w);
+						actual.onNext(w.asFlux());
 						if (r != Long.MAX_VALUE) {
 							REQUESTED.decrementAndGet(this);
 						}
@@ -295,7 +303,7 @@ final class FluxWindowTimeout<T> extends InternalFluxOperator<T, Flux<T>> {
 		void drainLoop() {
 			final Queue<Object> q = queue;
 			final Subscriber<? super Flux<T>> a = actual;
-			UnicastProcessor<T> w = window;
+			Sinks.Many<T> w = window;
 
 			int missed = 1;
 			for (; ; ) {
@@ -321,10 +329,10 @@ final class FluxWindowTimeout<T> extends InternalFluxOperator<T, Flux<T>> {
 						q.clear();
 						Throwable err = error;
 						if (err != null) {
-							w.onError(err);
+							w.emitError(err, Sinks.EmitFailureHandler.FAIL_FAST);
 						}
 						else {
-							w.onComplete();
+							w.emitComplete(Sinks.EmitFailureHandler.FAIL_FAST);
 						}
 						timer.dispose();
 						worker.dispose();
@@ -336,14 +344,14 @@ final class FluxWindowTimeout<T> extends InternalFluxOperator<T, Flux<T>> {
 					}
 
 					if (isHolder) {
-						w.onComplete();
+						w.emitComplete(Sinks.EmitFailureHandler.FAIL_FAST);
 						count = 0;
-						w = UnicastProcessor.create();
+						w = Sinks.unsafe().many().unicast().onBackpressureBuffer();
 						window = w;
 
 						long r = requested;
 						if (r != 0L) {
-							a.onNext(w);
+							a.onNext(w.asFlux());
 							if (r != Long.MAX_VALUE) {
 								REQUESTED.decrementAndGet(this);
 							}
@@ -360,21 +368,21 @@ final class FluxWindowTimeout<T> extends InternalFluxOperator<T, Flux<T>> {
 						continue;
 					}
 
-					w.onNext((T) o);
+					w.emitNext((T) o, Sinks.EmitFailureHandler.FAIL_FAST);
 					int c = count + 1;
 
 					if (c >= maxSize) {
 						producerIndex++;
 						count = 0;
 
-						w.onComplete();
+						w.emitComplete(Sinks.EmitFailureHandler.FAIL_FAST);
 
 						long r = requested;
 
 						if (r != 0L) {
-							w = UnicastProcessor.create();
+							w = Sinks.unsafe().many().unicast().onBackpressureBuffer();
 							window = w;
-							actual.onNext(w);
+							actual.onNext(w.asFlux());
 							if (r != Long.MAX_VALUE) {
 								REQUESTED.decrementAndGet(this);
 							}

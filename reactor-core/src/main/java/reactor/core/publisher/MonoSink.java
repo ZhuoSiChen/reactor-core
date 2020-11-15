@@ -21,6 +21,7 @@ import java.util.function.Function;
 import java.util.function.LongConsumer;
 
 import org.reactivestreams.Subscription;
+
 import reactor.core.CoreSubscriber;
 import reactor.core.Disposable;
 import reactor.util.annotation.Nullable;
@@ -35,27 +36,16 @@ import reactor.util.context.Context;
 public interface MonoSink<T> {
 
 	/**
-	 * Return the current subscriber {@link Context}.
-	 * <p>
-	 *   {@link Context} can be enriched via {@link Mono#subscriberContext(Function)}
-	 *   operator or directly by a child subscriber overriding
-	 *   {@link CoreSubscriber#currentContext()}
-	 *
-	 * @return the current subscriber {@link Context}.
-	 */
-	Context currentContext();
-
-	/**
 	 * Complete without any value. <p>Calling this method multiple times or after the
 	 * other terminating methods has no effect.
 	 */
 	void success();
 
-    /**
-	 * Complete with the given value.
+	/**
+	 * Complete this {@link Mono} with the given value.
 	 * <p>Calling this method multiple times or after the other
-	 * terminating methods has no effect (the value is purely ignored). Calling this method with
-	 * a {@code null} value will be silently accepted as a call to
+	 * terminating methods has no effect (the value is {@link Operators#onNextDropped(Object, Context) dropped}).
+	 * Calling this method with a {@code null} value will be silently accepted as a call to
 	 * {@link #success()} by standard implementations.
 	 *
 	 * @param value the value to complete with
@@ -63,16 +53,25 @@ public interface MonoSink<T> {
 	void success(@Nullable T value);
 
 	/**
-	 * Terminate with the give exception
+	 * Terminate with the given exception
 	 * <p>Calling this method multiple times or after the other terminating methods is
 	 * an unsupported operation. It will discard the exception through the
-	 * {@link Hooks#onErrorDropped(Consumer)} hook (which by default throws the exception
-	 * wrapped via {@link reactor.core.Exceptions#bubble(Throwable)}). This is to avoid
+	 * {@link Hooks#onErrorDropped(Consumer)} hook. This is to avoid
 	 * complete and silent swallowing of the exception.
-	 *
 	 * @param e the exception to complete with
 	 */
 	void error(Throwable e);
+
+	/**
+	 * Return the current subscriber {@link Context}.
+	 * <p>
+	 *   {@link Context} can be enriched via {@link Mono#contextWrite(Function)}
+	 *   operator or directly by a child subscriber overriding
+	 *   {@link CoreSubscriber#currentContext()}
+	 *
+	 * @return the current subscriber {@link Context}.
+	 */
+	Context currentContext();
 
 	/**
 	 * Attaches a {@link LongConsumer} to this {@link MonoSink} that will be notified of

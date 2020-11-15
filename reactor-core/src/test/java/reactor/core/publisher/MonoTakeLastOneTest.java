@@ -19,11 +19,13 @@ import java.util.NoSuchElementException;
 
 import org.junit.jupiter.api.Test;
 import org.reactivestreams.Subscription;
+
 import reactor.core.CoreSubscriber;
 import reactor.core.Scannable;
 import reactor.test.StepVerifier;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static reactor.core.publisher.Sinks.EmitFailureHandler.FAIL_FAST;
 
 public class MonoTakeLastOneTest {
 
@@ -127,13 +129,12 @@ public class MonoTakeLastOneTest {
 
 	@Test
 	public void defaultUsingZip() {
-
-		UnicastProcessor<String> processor1 = UnicastProcessor.create();
-		FluxSink<String> sink1 = processor1.sink();
-		UnicastProcessor<String> processor2 = UnicastProcessor.create();
-		FluxSink<String> sink2 = processor2.sink();
-		UnicastProcessor<String> processor3 = UnicastProcessor.create();
-		FluxSink<String> sink3 = processor3.sink();
+		Sinks.Many<String> sink1 = Sinks.many().unicast().onBackpressureBuffer();
+		Flux<String> processor1 = sink1.asFlux();
+		Sinks.Many<String> sink2 = Sinks.many().unicast().onBackpressureBuffer();
+		Flux<String> processor2 = sink2.asFlux();
+		Sinks.Many<String> sink3 = Sinks.many().unicast().onBackpressureBuffer();
+		Flux<String> processor3 = sink3.asFlux();
 
 		StepVerifier.create(
 						Flux.zip(
@@ -143,14 +144,21 @@ public class MonoTakeLastOneTest {
 						)
 				)
 				.then(() -> {
-					sink2.next("3");
-					sink3.next("1");
-					sink1.complete();
-					sink2.complete();
-					sink3.complete();
+					sink2.emitNext("3", FAIL_FAST);
+					sink3.emitNext("1", FAIL_FAST);
+					sink1.emitComplete(FAIL_FAST);
+					sink2.emitComplete(FAIL_FAST);
+					sink3.emitComplete(FAIL_FAST);
 				})
 				.expectNextMatches(objects -> objects.getT1().equals("Missing Value1") && objects.getT2().equals("3") && objects.getT3().equals("1"))
 				.verifyComplete();
+	}
+
+	@Test
+	public void scanOperator(){
+	    MonoTakeLastOne<Integer> test = new MonoTakeLastOne<>(Flux.just(1, 2, 3));
+
+	    assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 	}
 
 	@Test
@@ -166,6 +174,7 @@ public class MonoTakeLastOneTest {
 
 		assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
 		assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(actual);
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 
 		//terminated is detected via state HAS_VALUE
 		assertThat(test.scan(Scannable.Attr.TERMINATED)).isFalse();

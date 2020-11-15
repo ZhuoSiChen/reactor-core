@@ -43,6 +43,7 @@ public class ParallelFilterTest {
 		assertThat(test.scan(Scannable.Attr.PREFETCH))
 				.isEqualTo(-1)
 				.isNotEqualTo(source.getPrefetch());
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 	}
 
 	@Test

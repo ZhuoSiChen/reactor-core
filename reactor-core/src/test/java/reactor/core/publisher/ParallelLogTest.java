@@ -43,6 +43,7 @@ public class ParallelLogTest {
 		assertThat(test.scan(Scannable.Attr.PREFETCH))
 				.isEqualTo(256)
 				.isEqualTo(source.getPrefetch());
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 	}
 
 	@Test

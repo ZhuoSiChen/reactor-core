@@ -32,7 +32,6 @@ import reactor.test.util.RaceTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 
 public class FluxScanTest extends FluxOperatorTest<String, String> {
 
@@ -176,10 +175,10 @@ public class FluxScanTest extends FluxOperatorTest<String, String> {
 
 		sub.onNext(1);
 		sub.onNext(2);
-		assertThat(sub.value).isEqualTo(3);
+		Assertions.assertThat(sub.value).isEqualTo(3);
 
 		sub.onComplete();
-		assertThat(sub.value).isNull();
+		Assertions.assertThat(sub.value).isNull();
 
 		testSubscriber.assertNoError();
 	}
@@ -196,12 +195,21 @@ public class FluxScanTest extends FluxOperatorTest<String, String> {
 
 		sub.onNext(1);
 		sub.onNext(2);
-		assertThat(sub.value).isEqualTo(3);
+		Assertions.assertThat(sub.value).isEqualTo(3);
 
 		sub.onError(new RuntimeException("boom"));
-		assertThat(sub.value).isNull();
+		Assertions.assertThat(sub.value).isNull();
 
 		testSubscriber.assertErrorMessage("boom");
+	}
+
+	@Test
+	public void scanOperator(){
+		Flux<Integer> parent = Flux.just(1);
+		FluxScan<Integer> test = new FluxScan<>(parent, (v1, v2) -> v1);
+
+		Assertions.assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
+		Assertions.assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 	}
 
 	@Test
@@ -213,6 +221,7 @@ public class FluxScanTest extends FluxOperatorTest<String, String> {
 
         Assertions.assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
         Assertions.assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(actual);
+        Assertions.assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
         test.value = 5;
         Assertions.assertThat(test.scan(Scannable.Attr.BUFFERED)).isEqualTo(1);
 

@@ -19,16 +19,14 @@ package reactor.test.scheduler;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-import reactor.core.publisher.EmitterProcessor;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
@@ -53,21 +51,27 @@ public class VirtualTimeSchedulerTests {
 	@Test
 	public void allEnabled() {
 		assertThat(Schedulers.newParallel("")).isNotInstanceOf(VirtualTimeScheduler.class);
-		assertThat(Schedulers.newElastic("")).isNotInstanceOf(VirtualTimeScheduler.class);
+		@SuppressWarnings("deprecation")
+		Scheduler elastic1 = Schedulers.newElastic("");
+		assertThat(elastic1).isNotInstanceOf(VirtualTimeScheduler.class);
 		assertThat(Schedulers.newBoundedElastic(4, Integer.MAX_VALUE, "")).isNotInstanceOf(VirtualTimeScheduler.class);
 		assertThat(Schedulers.newSingle("")).isNotInstanceOf(VirtualTimeScheduler.class);
 
 		VirtualTimeScheduler.getOrSet();
 
 		assertThat(Schedulers.newParallel("")).isInstanceOf(VirtualTimeScheduler.class);
-		assertThat(Schedulers.newElastic("")).isInstanceOf(VirtualTimeScheduler.class);
+		@SuppressWarnings("deprecation")
+		Scheduler elastic2 = Schedulers.newElastic("");
+		assertThat(elastic2).isInstanceOf(VirtualTimeScheduler.class);
 		assertThat(Schedulers.newBoundedElastic(4, Integer.MAX_VALUE, "")).isInstanceOf(VirtualTimeScheduler.class);
 		assertThat(Schedulers.newSingle("")).isInstanceOf(VirtualTimeScheduler.class);
 
 		VirtualTimeScheduler t = VirtualTimeScheduler.get();
 
 		assertThat(Schedulers.newParallel("")).isSameAs(t);
-		assertThat(Schedulers.newElastic("")).isSameAs(t);
+		@SuppressWarnings("deprecation")
+		Scheduler elastic3 = Schedulers.newElastic("");
+		assertThat(elastic3).isSameAs(t);
 		assertThat(Schedulers.newBoundedElastic(5, Integer.MAX_VALUE, "")).isSameAs(t); //same even though different parameter
 		assertThat(Schedulers.newSingle("")).isSameAs(t);
 	}
@@ -336,6 +340,88 @@ public class VirtualTimeSchedulerTests {
 
 		assertThat(vts1.get().defer).isTrue();
 		assertThat(vts2.get()).isSameAs(vts1.get());
+	}
+
+
+	@Test
+	public void resetRestoresSnapshotOfSchedulers() {
+		AtomicInteger singleCreated = new AtomicInteger();
+		Schedulers.Factory customFactory = new Schedulers.Factory() {
+			@Override
+			public Scheduler newSingle(ThreadFactory threadFactory) {
+				singleCreated.incrementAndGet();
+				return Schedulers.Factory.super.newSingle(threadFactory);
+			}
+		};
+		Schedulers.setFactory(customFactory);
+		Scheduler originalScheduler = Schedulers.single();
+
+		assertThat(singleCreated).as("created custom pre VTS").hasValue(1);
+
+		//replace custom factory with VTS factory
+		VirtualTimeScheduler.getOrSet();
+		// trigger cache of VTS in CACHED_SINGLE
+		Scheduler vtsScheduler = Schedulers.single();
+
+		assertThat(singleCreated).as("after VTS setup").hasValue(1);
+		assertThat(vtsScheduler).as("shared scheduler replaced").isNotSameAs(originalScheduler);
+		assertThat(originalScheduler.isDisposed()).as("original isDisposed").isFalse();
+
+		//attempt to restore the original schedulers and factory
+		VirtualTimeScheduler.reset();
+		Scheduler postResetSharedScheduler = Schedulers.single();
+		Scheduler postResetNewScheduler = Schedulers.newSingle("ignored");
+		postResetNewScheduler.dispose();
+
+		assertThat(singleCreated).as("total custom created").hasValue(2);
+		assertThat(postResetSharedScheduler).as("shared restored").isSameAs(originalScheduler);
+		assertThat(postResetNewScheduler).as("new from restoredgt").isNotInstanceOf(VirtualTimeScheduler.class);
+	}
+
+	@Test
+	public void doubleCreationOfVtsCorrectlyResetsOriginalCustomFactory() {
+		AtomicInteger singleCreated = new AtomicInteger();
+		Schedulers.Factory customFactory = new Schedulers.Factory() {
+			@Override
+			public Scheduler newSingle(ThreadFactory threadFactory) {
+				singleCreated.incrementAndGet();
+				return Schedulers.Factory.super.newSingle(threadFactory);
+			}
+		};
+		Schedulers.setFactory(customFactory);
+		Scheduler originalScheduler = Schedulers.single();
+
+		assertThat(singleCreated).as("created custom pre VTS").hasValue(1);
+
+		//replace custom factory with VTS factory
+		VirtualTimeScheduler.getOrSet();
+		// trigger cache of VTS in CACHED_SINGLE
+		Scheduler vtsScheduler = Schedulers.single();
+
+		assertThat(singleCreated).as("after 1st VTS setup").hasValue(1);
+		assertThat(vtsScheduler).as("shared scheduler 1st replaced").isNotSameAs(originalScheduler);
+		assertThat(originalScheduler.isDisposed()).as("original isDisposed").isFalse();
+
+		//force replacing VTS factory by another VTS factory
+		VirtualTimeScheduler.set(VirtualTimeScheduler.create());
+		// trigger cache of VTS in CACHED_SINGLE
+		Scheduler vtsScheduler2 = Schedulers.single();
+
+		assertThat(singleCreated).as("after 2nd VTS setup").hasValue(1);
+		assertThat(vtsScheduler2).as("shared scheduler 2nd replaced")
+		                         .isNotSameAs(originalScheduler)
+		                         .isNotSameAs(vtsScheduler);
+		assertThat(originalScheduler.isDisposed()).as("original isDisposed").isFalse();
+
+		//attempt to restore the original schedulers and factory
+		VirtualTimeScheduler.reset();
+		Scheduler postResetSharedScheduler = Schedulers.single();
+		Scheduler postResetNewScheduler = Schedulers.newSingle("ignored");
+		postResetNewScheduler.dispose();
+
+		assertThat(singleCreated).as("total custom created").hasValue(2);
+		assertThat(postResetSharedScheduler).as("shared restored").isSameAs(originalScheduler);
+		assertThat(postResetNewScheduler).as("new from restoredgt").isNotInstanceOf(VirtualTimeScheduler.class);
 	}
 
 	@SuppressWarnings("unchecked")

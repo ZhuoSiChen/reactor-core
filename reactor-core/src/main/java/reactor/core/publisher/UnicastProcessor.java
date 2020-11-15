@@ -21,14 +21,16 @@ import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import java.util.function.Consumer;
+import java.util.stream.Stream;
 
-import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
+
 import reactor.core.CoreSubscriber;
 import reactor.core.Disposable;
 import reactor.core.Exceptions;
 import reactor.core.Fuseable;
 import reactor.core.Scannable;
+import reactor.core.publisher.Sinks.EmitResult;
 import reactor.util.annotation.Nullable;
 import reactor.util.concurrent.Queues;
 import reactor.util.context.Context;
@@ -64,7 +66,7 @@ import reactor.util.context.Context;
  *
  *      In the case when upstream's signals overflow the bound of internal Queue,
  *      UnicastProcessor will fail with signaling onError(
- *      {@link reactor.core.Exceptions.OverflowException}).
+ *      {@literal reactor.core.Exceptions.OverflowException}).
  *
  *      <p>
  *         <img width="640" src="https://raw.githubusercontent.com/reactor/reactor-core/v3.2.0.M2/src/docs/marble/unicastprocessoroverflow.png" alt="">
@@ -84,10 +86,13 @@ import reactor.util.context.Context;
  * </p>
  *
  * @param <T> the input and output type
+ * @deprecated to be removed in 3.5, prefer clear cut usage of {@link Sinks} through
+ * variations under {@link reactor.core.publisher.Sinks.UnicastSpec Sinks.many().unicast()}.
  */
-public final class UnicastProcessor<T>
-		extends FluxProcessor<T, T>
-		implements Fuseable.QueueSubscription<T>, Fuseable, InnerOperator<T, T> {
+@Deprecated
+public final class UnicastProcessor<T> extends FluxProcessor<T, T>
+		implements Fuseable.QueueSubscription<T>, Fuseable, InnerOperator<T, T>,
+		           InternalManySink<T> {
 
 	/**
 	 * Create a new {@link UnicastProcessor} that will buffer on an internal queue in an
@@ -136,7 +141,9 @@ public final class UnicastProcessor<T>
 	 * @param <E> the relayed type
 	 *
 	 * @return a unicast {@link FluxProcessor}
+	 * @deprecated should not expose onOverflow / remove in a future reactor version
 	 */
+	@Deprecated
 	public static <E> UnicastProcessor<E> create(Queue<E> queue,
 			Consumer<? super E> onOverflow,
 			Disposable endcallback) {
@@ -193,6 +200,7 @@ public final class UnicastProcessor<T>
 		this.onOverflow = null;
 	}
 
+	@Deprecated
 	public UnicastProcessor(Queue<T> queue,
 			Consumer<? super T> onOverflow,
 			Disposable onTerminate) {
@@ -207,10 +215,131 @@ public final class UnicastProcessor<T>
 	}
 
 	@Override
+	public Stream<Scannable> inners() {
+		return hasDownstream ? Stream.of(Scannable.from(actual)) : Stream.empty();
+	}
+
+	@Override
 	public Object scanUnsafe(Attr key) {
+		if (Attr.ACTUAL == key) return actual();
 		if (Attr.BUFFERED == key) return queue.size();
 		if (Attr.PREFETCH == key) return Integer.MAX_VALUE;
+		if (Attr.CANCELLED == key) return cancelled;
+
+		//TERMINATED and ERROR covered in super
 		return super.scanUnsafe(key);
+	}
+
+	@Override
+	public void onComplete() {
+		//no particular error condition handling for onComplete
+		@SuppressWarnings("unused") EmitResult emitResult = tryEmitComplete();
+	}
+
+	@Override
+	public EmitResult tryEmitComplete() {
+		if (done) {
+			return EmitResult.FAIL_TERMINATED;
+		}
+		if (cancelled) {
+			return EmitResult.FAIL_CANCELLED;
+		}
+
+		done = true;
+
+		doTerminate();
+
+		drain(null);
+		return Sinks.EmitResult.OK;
+	}
+
+	@Override
+	public void onError(Throwable throwable) {
+		emitError(throwable, Sinks.EmitFailureHandler.FAIL_FAST);
+	}
+
+	@Override
+	public Sinks.EmitResult tryEmitError(Throwable t) {
+		if (done) {
+			return Sinks.EmitResult.FAIL_TERMINATED;
+		}
+		if (cancelled) {
+			return EmitResult.FAIL_CANCELLED;
+		}
+
+		error = t;
+		done = true;
+
+		doTerminate();
+
+		drain(null);
+		return EmitResult.OK;
+	}
+
+	@Override
+	public void onNext(T t) {
+		emitNext(t, Sinks.EmitFailureHandler.FAIL_FAST);
+	}
+
+	@Override
+	public void emitNext(T value, Sinks.EmitFailureHandler failureHandler) {
+		if (onOverflow == null) {
+			InternalManySink.super.emitNext(value, failureHandler);
+			return;
+		}
+
+		// TODO consider deprecating onOverflow and suggesting using a strategy instead
+		InternalManySink.super.emitNext(
+				value, (signalType, emission) -> {
+					boolean shouldRetry = failureHandler.onEmitFailure(SignalType.ON_NEXT, emission);
+					if (!shouldRetry) {
+						switch (emission) {
+							case FAIL_ZERO_SUBSCRIBER:
+							case FAIL_OVERFLOW:
+								try {
+									onOverflow.accept(value);
+								}
+								catch (Throwable e) {
+									Exceptions.throwIfFatal(e);
+									emitError(e, Sinks.EmitFailureHandler.FAIL_FAST);
+								}
+								break;
+						}
+					}
+					return shouldRetry;
+				}
+		);
+	}
+
+	@Override
+	public EmitResult tryEmitNext(T t) {
+		if (done) {
+			return EmitResult.FAIL_TERMINATED;
+		}
+		if (cancelled) {
+			return EmitResult.FAIL_CANCELLED;
+		}
+
+		if (!queue.offer(t)) {
+			return (once > 0) ? EmitResult.FAIL_OVERFLOW : EmitResult.FAIL_ZERO_SUBSCRIBER;
+		}
+		drain(t);
+		return EmitResult.OK;
+	}
+
+	@Override
+	public int currentSubscriberCount() {
+		return hasDownstream ? 1 : 0;
+	}
+
+	@Override
+	public Flux<T> asFlux() {
+		return this;
+	}
+
+	@Override
+	protected boolean isIdentityProcessor() {
+		return true;
 	}
 
 	void doTerminate() {
@@ -268,8 +397,6 @@ public final class UnicastProcessor<T>
 
 	void drainFused(CoreSubscriber<? super T> a) {
 		int missed = 1;
-
-		final Queue<T> q = queue;
 
 		for (;;) {
 
@@ -379,61 +506,6 @@ public final class UnicastProcessor<T>
 	public Context currentContext() {
 		CoreSubscriber<? super T> actual = this.actual;
 		return actual != null ? actual.currentContext() : Context.empty();
-	}
-
-	@Override
-	public void onNext(T t) {
-		if (done || cancelled) {
-			Operators.onNextDropped(t, currentContext());
-			return;
-		}
-
-		if (!queue.offer(t)) {
-			Context ctx = actual.currentContext();
-			Throwable ex = Operators.onOperatorError(null,
-					Exceptions.failWithOverflow(), t, ctx);
-			if (onOverflow != null) {
-				try {
-					onOverflow.accept(t);
-				}
-				catch (Throwable e) {
-					Exceptions.throwIfFatal(e);
-					ex.initCause(e);
-				}
-			}
-			Operators.onDiscard(t, ctx);
-			onError(ex);
-			return;
-		}
-		drain(t);
-	}
-
-	@Override
-	public void onError(Throwable t) {
-		if (done || cancelled) {
-			Operators.onErrorDropped(t, currentContext());
-			return;
-		}
-
-		error = t;
-		done = true;
-
-		doTerminate();
-
-		drain(null);
-	}
-
-	@Override
-	public void onComplete() {
-		if (done || cancelled) {
-			return;
-		}
-
-		done = true;
-
-		doTerminate();
-
-		drain(null);
 	}
 
 	@Override
@@ -564,4 +636,5 @@ public final class UnicastProcessor<T>
 	public boolean hasDownstreams() {
 		return hasDownstream;
 	}
+
 }

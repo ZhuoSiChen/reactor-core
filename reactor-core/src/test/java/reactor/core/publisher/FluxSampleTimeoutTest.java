@@ -18,9 +18,9 @@ package reactor.core.publisher;
 
 import java.time.Duration;
 
-import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.reactivestreams.Subscription;
+
 import reactor.core.CoreSubscriber;
 import reactor.core.Scannable;
 import reactor.core.publisher.FluxSampleTimeout.SampleTimeoutOther;
@@ -29,6 +29,7 @@ import reactor.test.subscriber.AssertSubscriber;
 import reactor.util.concurrent.Queues;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static reactor.core.publisher.Sinks.EmitFailureHandler.FAIL_FAST;
 
 public class FluxSampleTimeoutTest {
 
@@ -36,102 +37,106 @@ public class FluxSampleTimeoutTest {
 	public void normal() {
 		AssertSubscriber<Integer> ts = AssertSubscriber.create();
 
-		DirectProcessor<Integer> sp1 = DirectProcessor.create();
-		DirectProcessor<Integer> sp2 = DirectProcessor.create();
-		DirectProcessor<Integer> sp3 = DirectProcessor.create();
+		Sinks.Many<Integer> sp1 = Sinks.unsafe().many().multicast().directBestEffort();
+		Sinks.Many<Integer> sp2 = Sinks.unsafe().many().multicast().directBestEffort();
+		Sinks.Many<Integer> sp3 = Sinks.unsafe().many().multicast().directBestEffort();
 
-		sp1.sampleTimeout(v -> v == 1 ? sp2 : sp3)
+		sp1.asFlux()
+		   .sampleTimeout(v -> v == 1 ? sp2.asFlux() : sp3.asFlux())
 		   .subscribe(ts);
 
-		sp1.onNext(1);
-		sp2.onNext(1);
+		sp1.emitNext(1, FAIL_FAST);
+		sp2.emitNext(1, FAIL_FAST);
 
 		ts.assertValues(1)
 		  .assertNoError()
 		  .assertNotComplete();
 
-		sp1.onNext(2);
-		sp1.onNext(3);
-		sp1.onNext(4);
+		sp1.emitNext(2, FAIL_FAST);
+		sp1.emitNext(3, FAIL_FAST);
+		sp1.emitNext(4, FAIL_FAST);
 
-		sp3.onNext(2);
+		sp3.emitNext(2, FAIL_FAST);
 
 		ts.assertValues(1, 4)
 		  .assertNoError()
 		  .assertNotComplete();
 
-		sp1.onNext(5);
-		sp1.onComplete();
+		sp1.emitNext(5, FAIL_FAST);
+		sp1.emitComplete(FAIL_FAST);
 
 		ts.assertValues(1, 4, 5)
 		  .assertNoError()
 		  .assertComplete();
 
-		assertThat(sp1.hasDownstreams()).as("sp1 has subscribers?").isFalse();
-		assertThat(sp2.hasDownstreams()).as("sp2 has subscribers?").isFalse();
-		assertThat(sp3.hasDownstreams()).as("sp3 has subscribers?").isFalse();
+		assertThat(sp1.currentSubscriberCount()).as("sp1 has subscriber").isZero();
+		assertThat(sp2.currentSubscriberCount()).as("sp2 has subscriber").isZero();
+		assertThat(sp3.currentSubscriberCount()).as("sp3 has subscriber").isZero();
 	}
 
 	@Test
 	public void mainError() {
 		AssertSubscriber<Integer> ts = AssertSubscriber.create();
 
-		DirectProcessor<Integer> sp1 = DirectProcessor.create();
-		DirectProcessor<Integer> sp2 = DirectProcessor.create();
+		Sinks.Many<Integer> sp1 = Sinks.unsafe().many().multicast().directBestEffort();
+		Sinks.Many<Integer> sp2 = Sinks.unsafe().many().multicast().directBestEffort();
 
-		sp1.sampleTimeout(v -> sp2)
+		sp1.asFlux()
+		   .sampleTimeout(v -> sp2.asFlux())
 		   .subscribe(ts);
 
-		sp1.onNext(1);
-		sp1.onError(new RuntimeException("forced failure"));
+		sp1.emitNext(1, FAIL_FAST);
+		sp1.emitError(new RuntimeException("forced failure"), FAIL_FAST);
 
 		ts.assertNoValues()
 		  .assertError(RuntimeException.class)
 		  .assertErrorMessage("forced failure")
 		  .assertNotComplete();
 
-		assertThat(sp1.hasDownstreams()).as("sp1 has subscribers?").isFalse();
-		assertThat(sp2.hasDownstreams()).as("sp2 has subscribers?").isFalse();
+		assertThat(sp1.currentSubscriberCount()).as("sp1 has subscriber").isZero();
+		assertThat(sp2.currentSubscriberCount()).as("sp2 has subscriber").isZero();
 	}
 
 	@Test
 	public void throttlerError() {
 		AssertSubscriber<Integer> ts = AssertSubscriber.create();
 
-		DirectProcessor<Integer> sp1 = DirectProcessor.create();
-		DirectProcessor<Integer> sp2 = DirectProcessor.create();
+		Sinks.Many<Integer> sp1 = Sinks.unsafe().many().multicast().directBestEffort();
+		Sinks.Many<Integer> sp2 = Sinks.unsafe().many().multicast().directBestEffort();
 
-		sp1.sampleTimeout(v -> sp2)
+		sp1.asFlux()
+		   .sampleTimeout(v -> sp2.asFlux())
 		   .subscribe(ts);
 
-		sp1.onNext(1);
-		sp2.onError(new RuntimeException("forced failure"));
+		sp1.emitNext(1, FAIL_FAST);
+		sp2.emitError(new RuntimeException("forced failure"), FAIL_FAST);
 
 		ts.assertNoValues()
 		  .assertError(RuntimeException.class)
 		  .assertErrorMessage("forced failure")
 		  .assertNotComplete();
 
-		assertThat(sp1.hasDownstreams()).as("sp1 has subscribers?").isFalse();
-		assertThat(sp2.hasDownstreams()).as("sp2 has subscribers?").isFalse();
+		assertThat(sp1.currentSubscriberCount()).as("sp1 has subscriber").isZero();
+		assertThat(sp2.currentSubscriberCount()).as("sp2 has subscriber").isZero();
 	}
 
 	@Test
 	public void throttlerReturnsNull() {
 		AssertSubscriber<Integer> ts = AssertSubscriber.create();
 
-		DirectProcessor<Integer> sp1 = DirectProcessor.create();
+		Sinks.Many<Integer> sp1 = Sinks.unsafe().many().multicast().directBestEffort();
 
-		sp1.sampleTimeout(v -> null)
+		sp1.asFlux()
+		   .sampleTimeout(v -> null)
 		   .subscribe(ts);
 
-		sp1.onNext(1);
+		sp1.emitNext(1, FAIL_FAST);
 
 		ts.assertNoValues()
 		  .assertError(NullPointerException.class)
 		  .assertNotComplete();
 
-		assertThat(sp1.hasDownstreams()).as("sp1 has subscribers?").isFalse();
+		assertThat(sp1.currentSubscriberCount()).as("sp1 has subscriber").isZero();
 	}
 
 	@Test
@@ -202,6 +207,15 @@ public class FluxSampleTimeoutTest {
 	}
 
 	@Test
+	public void scanOperator(){
+		Flux<Integer> parent = Flux.just(1);
+		FluxSampleTimeout<Integer, Integer> test = new FluxSampleTimeout<>(parent, v -> Flux.just(2), Queues.empty());
+
+		assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
+	}
+
+	@Test
     public void scanMain() {
         CoreSubscriber<Integer> actual = new LambdaSubscriber<>(null, e -> {}, null, null);
         FluxSampleTimeout.SampleTimeoutMain<Integer, Integer> test =
@@ -210,20 +224,21 @@ public class FluxSampleTimeoutTest {
         Subscription parent = Operators.emptySubscription();
         test.onSubscribe(parent);
 
-        Assertions.assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
-        Assertions.assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(actual);
+        assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
+        assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(actual);
         test.requested = 35;
-        Assertions.assertThat(test.scan(Scannable.Attr.REQUESTED_FROM_DOWNSTREAM)).isEqualTo(35L);
+        assertThat(test.scan(Scannable.Attr.REQUESTED_FROM_DOWNSTREAM)).isEqualTo(35L);
         test.queue.add(new FluxSampleTimeout.SampleTimeoutOther<Integer, Integer>(test, 1, 0));
-        Assertions.assertThat(test.scan(Scannable.Attr.BUFFERED)).isEqualTo(1);
+        assertThat(test.scan(Scannable.Attr.BUFFERED)).isEqualTo(1);
+        assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 
-        Assertions.assertThat(test.scan(Scannable.Attr.CANCELLED)).isFalse();
-        Assertions.assertThat(test.scan(Scannable.Attr.TERMINATED)).isFalse();
+        assertThat(test.scan(Scannable.Attr.CANCELLED)).isFalse();
+        assertThat(test.scan(Scannable.Attr.TERMINATED)).isFalse();
         test.error = new IllegalStateException("boom");
-        Assertions.assertThat(test.scan(Scannable.Attr.ERROR)).hasMessage("boom");
+        assertThat(test.scan(Scannable.Attr.ERROR)).hasMessage("boom");
         test.onComplete();
-        Assertions.assertThat(test.scan(Scannable.Attr.TERMINATED)).isTrue();
-        Assertions.assertThat(test.scan(Scannable.Attr.CANCELLED)).isTrue();
+        assertThat(test.scan(Scannable.Attr.TERMINATED)).isTrue();
+        assertThat(test.scan(Scannable.Attr.CANCELLED)).isTrue();
     }
 
 	@Test
@@ -235,17 +250,18 @@ public class FluxSampleTimeoutTest {
         FluxSampleTimeout.SampleTimeoutOther<Integer, Integer> test =
         		new FluxSampleTimeout.SampleTimeoutOther<Integer, Integer>(main, 1, 0);
 
-        Assertions.assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(main.other);
-        Assertions.assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(main);
+        assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(main.other);
+        assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(main);
         test.request(35);
-		Assertions.assertThat(test.scan(Scannable.Attr.REQUESTED_FROM_DOWNSTREAM)).isEqualTo(35);
+		assertThat(test.scan(Scannable.Attr.REQUESTED_FROM_DOWNSTREAM)).isEqualTo(35);
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 
-        Assertions.assertThat(test.scan(Scannable.Attr.TERMINATED)).isFalse();
+        assertThat(test.scan(Scannable.Attr.TERMINATED)).isFalse();
         test.onComplete();
-        Assertions.assertThat(test.scan(Scannable.Attr.TERMINATED)).isTrue();
+        assertThat(test.scan(Scannable.Attr.TERMINATED)).isTrue();
 
-        Assertions.assertThat(test.scan(Scannable.Attr.CANCELLED)).isFalse();
+        assertThat(test.scan(Scannable.Attr.CANCELLED)).isFalse();
         test.cancel();
-        Assertions.assertThat(test.scan(Scannable.Attr.CANCELLED)).isTrue();
+        assertThat(test.scan(Scannable.Attr.CANCELLED)).isTrue();
     }
 }

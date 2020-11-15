@@ -22,6 +22,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.function.BiFunction;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 import org.assertj.core.api.Assumptions;
 import org.junit.jupiter.api.AfterEach;
@@ -39,14 +40,17 @@ import reactor.test.MemoryUtils.Tracked;
 import reactor.test.publisher.TestPublisher;
 import reactor.test.subscriber.AssertSubscriber;
 import reactor.test.util.RaceTestUtils;
+import reactor.util.annotation.Nullable;
 import reactor.util.concurrent.Queues;
 
 // TODO Junit 5: would maybe be better handled as a dynamic test, but  was migrated kind of "as is" to make sure
 // test count did not regress.
+import static reactor.core.publisher.Sinks.EmitFailureHandler.FAIL_FAST;
+
 public class OnDiscardShouldNotLeakTest {
 
 	// add DiscardScenarios here to test more operators
-	private static DiscardScenario[] SCENARIOS = new DiscardScenario[] {
+	private static final DiscardScenario[] SCENARIOS = new DiscardScenario[] {
 			DiscardScenario.allFluxSourceArray("merge", 4, Flux::merge),
 			DiscardScenario.fluxSource("onBackpressureBuffer", 1, Flux::onBackpressureBuffer),
 			DiscardScenario.fluxSource("onBackpressureBufferAndPublishOn", 1, f -> f
@@ -72,13 +76,12 @@ public class OnDiscardShouldNotLeakTest {
 					.map(Function.identity())
 					.map(Function.identity())
 					.publishOn(Schedulers.immediate())),
-			DiscardScenario.fluxSource("unicastProcessor", 1, f -> f.subscribeWith(UnicastProcessor.create())),
-			DiscardScenario.fluxSource("unicastProcessorAndPublishOn", 1, f -> f
-					.subscribeWith(UnicastProcessor.create())
-					.publishOn(Schedulers.immediate())),
+			DiscardScenario.sinkSource("unicastSink", 1, Sinks.unsafe().many().unicast()::onBackpressureBuffer, null),
+			DiscardScenario.sinkSource("unicastSinkAndPublishOn", 1, Sinks.unsafe().many().unicast()::onBackpressureBuffer,
+					f -> f.publishOn(Schedulers.immediate())),
 	};
 
-	private static boolean[][] CONDITIONAL_AND_FUSED = new boolean[][] {
+	private static final boolean[][] CONDITIONAL_AND_FUSED = new boolean[][] {
 			{ false, false },
 			{ true, false },
 			{ false, true },
@@ -139,15 +142,16 @@ public class OnDiscardShouldNotLeakTest {
 		for (int i = 0; i < 10000; i++) {
 			tracker.reset();
 			int[] index = new int[]{subscriptionsNumber};
-			TestPublisher<Tracked>[] testPublishers = new TestPublisher[subscriptionsNumber];
+			List<TestPublisher<Tracked>> testPublishers = new ArrayList<>(subscriptionsNumber);
 
 			for (int i1 = 0; i1 < subscriptionsNumber; i1++) {
-				testPublishers[i1] = TestPublisher.createNoncompliant(
+				testPublishers.add(TestPublisher.createNoncompliant(
 						TestPublisher.Violation.DEFER_CANCELLATION,
-						TestPublisher.Violation.REQUEST_OVERFLOW);
+						TestPublisher.Violation.REQUEST_OVERFLOW)
+				);
 			}
 
-			Publisher<Tracked> source = discardScenario.producePublisherFromSources(testPublishers[0], Arrays.copyOfRange(testPublishers, 1, testPublishers.length));
+			Publisher<Tracked> source = discardScenario.producePublisherFromSources(testPublishers.get(0), testPublishers.subList(1, testPublishers.size()));
 
 			if (conditional) {
 				if (source instanceof Flux) {
@@ -171,7 +175,7 @@ public class OnDiscardShouldNotLeakTest {
 								assertSubscriber::cancel,
 								() -> assertSubscriber.request(Long.MAX_VALUE),
 								scheduler),
-						() -> testPublishers[0].next(value),
+						() -> testPublishers.get(0).next(value),
 						scheduler);
 			}
 			else {
@@ -180,8 +184,8 @@ public class OnDiscardShouldNotLeakTest {
 				int secondIndex = --index[0];
 				Tracked value2 = tracker.track(secondIndex);
 				Runnable action = () -> RaceTestUtils.race(
-						() -> testPublishers[startIndex].next(value1),
-						() -> testPublishers[secondIndex].next(value2),
+						() -> testPublishers.get(startIndex).next(value1),
+						() -> testPublishers.get(secondIndex).next(value2),
 						scheduler);
 
 				while (index[0] > 0) {
@@ -190,7 +194,7 @@ public class OnDiscardShouldNotLeakTest {
 					Runnable nextAction = action;
 					action = () -> RaceTestUtils.race(
 							nextAction,
-							() -> testPublishers[nextIndex].next(nextValue),
+							() -> testPublishers.get(nextIndex).next(nextValue),
 							scheduler);
 				}
 				RaceTestUtils.race(() ->
@@ -221,15 +225,16 @@ public class OnDiscardShouldNotLeakTest {
 		for (int i = 0; i < 10000; i++) {
 			tracker.reset();
 			int[] index = new int[]{subscriptionsNumber};
-			TestPublisher<Tracked>[] testPublishers = new TestPublisher[subscriptionsNumber];
+			List<TestPublisher<Tracked>> testPublishers = new ArrayList<>(subscriptionsNumber);
 
 			for (int i1 = 0; i1 < subscriptionsNumber; i1++) {
-				testPublishers[i1] = TestPublisher.createNoncompliant(
+				testPublishers.add(TestPublisher.createNoncompliant(
 						TestPublisher.Violation.DEFER_CANCELLATION,
-						TestPublisher.Violation.REQUEST_OVERFLOW);
+						TestPublisher.Violation.REQUEST_OVERFLOW)
+				);
 			}
 
-			Publisher<Tracked> source = discardScenario.producePublisherFromSources(testPublishers[0], Arrays.copyOfRange(testPublishers, 1, testPublishers.length));
+			Publisher<Tracked> source = discardScenario.producePublisherFromSources(testPublishers.get(0), testPublishers.subList(1, testPublishers.size()));
 
 			if (conditional) {
 				if (source instanceof Flux) {
@@ -256,8 +261,8 @@ public class OnDiscardShouldNotLeakTest {
 			Tracked value23 = tracker.track(secondIndex+"3");
 			Tracked value24 = tracker.track(secondIndex+"4");
 			Runnable action = () -> RaceTestUtils.race(
-					() -> testPublishers[startIndex].next(value11, value12, value13, value14),
-					() -> testPublishers[secondIndex].next(value21, value22, value23, value24),
+					() -> testPublishers.get(startIndex).next(value11, value12, value13, value14),
+					() -> testPublishers.get(secondIndex).next(value21, value22, value23, value24),
 					scheduler);
 
 			while (index[0] > 0) {
@@ -269,7 +274,7 @@ public class OnDiscardShouldNotLeakTest {
 				Runnable nextAction = action;
 				action = () -> RaceTestUtils.race(
 						nextAction,
-						() -> testPublishers[nextIndex].next(nextValue1, nextValue2, nextValue3, nextValue4),
+						() -> testPublishers.get(nextIndex).next(nextValue1, nextValue2, nextValue3, nextValue4),
 						scheduler);
 			}
 			RaceTestUtils.race(() ->
@@ -298,7 +303,7 @@ public class OnDiscardShouldNotLeakTest {
 			TestPublisher<Tracked> testPublisher = TestPublisher.createNoncompliant(
 					TestPublisher.Violation.DEFER_CANCELLATION,
 					TestPublisher.Violation.REQUEST_OVERFLOW);
-			Publisher<Tracked> source = discardScenario.producePublisherFromSources(testPublisher);
+			Publisher<Tracked> source = discardScenario.producePublisherFromSources(testPublisher, null);
 
 			if (conditional) {
 				if (source instanceof Flux) {
@@ -352,7 +357,7 @@ public class OnDiscardShouldNotLeakTest {
 			TestPublisher<Tracked> testPublisher = TestPublisher.createNoncompliant(
 					TestPublisher.Violation.DEFER_CANCELLATION,
 					TestPublisher.Violation.REQUEST_OVERFLOW);
-			Publisher<Tracked> source = discardScenario.producePublisherFromSources(testPublisher);
+			Publisher<Tracked> source = discardScenario.producePublisherFromSources(testPublisher, null);
 
 			if (conditional) {
 				if (source instanceof Flux) {
@@ -403,8 +408,7 @@ public class OnDiscardShouldNotLeakTest {
 			TestPublisher<Tracked> testPublisher = TestPublisher.createNoncompliant(
 					TestPublisher.Violation.DEFER_CANCELLATION,
 					TestPublisher.Violation.REQUEST_OVERFLOW);
-			@SuppressWarnings("unchecked")
-			Publisher<Tracked> source = discardScenario.producePublisherFromSources(testPublisher);
+			Publisher<Tracked> source = discardScenario.producePublisherFromSources(testPublisher, null);
 
 			if (conditional) {
 				if (source instanceof Flux) {
@@ -459,8 +463,7 @@ public class OnDiscardShouldNotLeakTest {
 			TestPublisher<Tracked> testPublisher = TestPublisher.createNoncompliant(
 					TestPublisher.Violation.DEFER_CANCELLATION,
 					TestPublisher.Violation.REQUEST_OVERFLOW);
-			@SuppressWarnings("unchecked")
-			Publisher<Tracked> source = discardScenario.producePublisherFromSources(testPublisher);
+			Publisher<Tracked> source = discardScenario.producePublisherFromSources(testPublisher, null);
 
 			if (conditional) {
 				if (source instanceof Flux) {
@@ -521,8 +524,7 @@ public class OnDiscardShouldNotLeakTest {
 			TestPublisher<Tracked> testPublisher = TestPublisher.createNoncompliant(
 					TestPublisher.Violation.DEFER_CANCELLATION,
 					TestPublisher.Violation.REQUEST_OVERFLOW);
-			@SuppressWarnings("unchecked")
-			Publisher<Tracked> source = discardScenario.producePublisherFromSources(testPublisher);
+			Publisher<Tracked> source = discardScenario.producePublisherFromSources(testPublisher, null);
 
 			if (conditional) {
 				if (source instanceof Flux) {
@@ -571,14 +573,31 @@ public class OnDiscardShouldNotLeakTest {
 			return new DiscardScenario(desc, subs, (main, others) -> fluxToPublisherProducer.apply(main.flux()));
 		}
 
-		static DiscardScenario allFluxSourceArray(String desc, int subs,
-				Function<Flux<Tracked>[], Publisher<Tracked>> producer) {
+		static DiscardScenario sinkSource(String desc, int subs,
+				Supplier<Sinks.Many<Tracked>> sinksManySupplier,
+				@Nullable Function<Flux<Tracked>, Flux<Tracked>> furtherTransformation) {
 			return new DiscardScenario(desc, subs, (main, others) -> {
-				@SuppressWarnings("unchecked")
-				Flux<Tracked>[] inners = new Flux[subs];
-				inners[0] = main.flux();
+				Sinks.Many<Tracked> sink = sinksManySupplier.get();
+				//noinspection CallingSubscribeInNonBlockingScope
+				main.flux().subscribe(
+						v -> sink.emitNext(v, FAIL_FAST),
+						e -> sink.emitError(e, FAIL_FAST),
+						() -> sink.emitComplete(FAIL_FAST));
+				Flux<Tracked> finalFlux = sink.asFlux();
+				if (furtherTransformation != null) {
+					finalFlux = furtherTransformation.apply(finalFlux);
+				}
+				return finalFlux;
+			});
+		}
+
+		static DiscardScenario allFluxSourceArray(String desc, int subs,
+				Function<List<Flux<Tracked>>, Publisher<Tracked>> producer) {
+			return new DiscardScenario(desc, subs, (main, others) -> {
+				List<Flux<Tracked>> inners = new ArrayList<>(subs);
+				inners.add(main.flux());
 				for (int i = 1; i < subs; i++) {
-					inners[i] = others[i - 1].flux();
+					inners.add( others.get(i - 1).flux());
 				}
 				return producer.apply(inners);
 			});
@@ -587,16 +606,16 @@ public class OnDiscardShouldNotLeakTest {
 		final String scenarioDescription;
 		final int    subscriptionsNumber;
 
-		private final BiFunction<TestPublisher<Tracked>, TestPublisher<Tracked>[], Publisher<Tracked>>
+		private final BiFunction<TestPublisher<Tracked>, List<TestPublisher<Tracked>>, Publisher<Tracked>>
 				publisherProducer;
 
-		DiscardScenario(String description, int subscriptionsNumber, BiFunction<TestPublisher<Tracked>, TestPublisher<Tracked>[], Publisher<Tracked>> publisherProducer) {
+		DiscardScenario(String description, int subscriptionsNumber, BiFunction<TestPublisher<Tracked>, List<TestPublisher<Tracked>>, Publisher<Tracked>> publisherProducer) {
 			this.scenarioDescription = description;
 			this.subscriptionsNumber = subscriptionsNumber;
 			this.publisherProducer = publisherProducer;
 		}
 
-		Publisher<Tracked> producePublisherFromSources(TestPublisher<Tracked> mainSource, TestPublisher<Tracked>... otherSources) {
+		Publisher<Tracked> producePublisherFromSources(TestPublisher<Tracked> mainSource, List<TestPublisher<Tracked>> otherSources) {
 			return publisherProducer.apply(mainSource, otherSources);
 		}
 

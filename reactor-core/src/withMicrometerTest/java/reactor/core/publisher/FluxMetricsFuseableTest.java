@@ -17,7 +17,6 @@
 package reactor.core.publisher;
 
 import java.time.Duration;
-import java.util.Collections;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -25,7 +24,6 @@ import io.micrometer.core.instrument.Clock;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.core.instrument.Metrics;
 import io.micrometer.core.instrument.MockClock;
 import io.micrometer.core.instrument.Tags;
 import io.micrometer.core.instrument.Timer;
@@ -37,24 +35,34 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.reactivestreams.Subscription;
 import reactor.core.Fuseable;
+import reactor.core.Scannable;
 import reactor.test.StepVerifier;
 import reactor.test.subscriber.AssertSubscriber;
+import reactor.util.Metrics;
 
-import static org.assertj.core.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 import static reactor.core.publisher.FluxMetrics.*;
+import static reactor.core.publisher.FluxMetrics.TAG_ON_COMPLETE_EMPTY;
 
 public class FluxMetricsFuseableTest {
 
 	private MeterRegistry registry;
+	private MeterRegistry previousRegistry;
+	private MockClock clock;
 
 	@BeforeEach
 	public void setupRegistry() {
-		registry = new SimpleMeterRegistry();
+		clock = new MockClock();
+		registry = new SimpleMeterRegistry(SimpleConfig.DEFAULT, clock);
+		previousRegistry = Metrics.MicrometerConfiguration.useRegistry(registry);
 	}
 
 	@AfterEach
 	public void removeRegistry() {
 		registry.close();
+		Metrics.MicrometerConfiguration.useRegistry(previousRegistry);
 	}
 
 	// === Fuseable-specific tests ===
@@ -95,11 +103,6 @@ public class FluxMetricsFuseableTest {
 
 	@Test
 	public void queuePollTracksOnNext() {
-		//prepare registry with mock clock
-		MockClock clock = new MockClock();
-		removeRegistry();
-		registry = new SimpleMeterRegistry(SimpleConfig.DEFAULT, clock);
-
 		AssertSubscriber<Integer> testSubscriber = AssertSubscriber.create();
 		FluxMetricsFuseable.MetricsFuseableSubscriber<Integer> fuseableSubscriber =
 				new FluxMetricsFuseable.MetricsFuseableSubscriber<>(testSubscriber,
@@ -118,8 +121,7 @@ public class FluxMetricsFuseableTest {
 		assertThat(val2).isNull();
 
 		//test meters
-		Timer nextTimer = registry.find(METER_ON_NEXT_DELAY)
-				.timer();
+		Timer nextTimer = registry.find("foo" + METER_ON_NEXT_DELAY).timer();
 
 		assertThat(nextTimer).isNotNull();
 		assertThat(nextTimer.max(TimeUnit.MILLISECONDS)).as("onNext max delay").isEqualTo(200);
@@ -127,11 +129,6 @@ public class FluxMetricsFuseableTest {
 
 	@Test
 	public void queuePollSyncTracksOnComplete() {
-		//prepare registry with mock clock
-		MockClock clock = new MockClock();
-		removeRegistry();
-		registry = new SimpleMeterRegistry(SimpleConfig.DEFAULT, clock);
-
 		AssertSubscriber<Integer> testSubscriber = AssertSubscriber.create();
 		FluxMetricsFuseable.MetricsFuseableSubscriber<Integer> fuseableSubscriber =
 				new FluxMetricsFuseable.MetricsFuseableSubscriber<>(testSubscriber,
@@ -152,7 +149,7 @@ public class FluxMetricsFuseableTest {
 		assertThat(val2).isNull();
 
 		//test meters
-		Timer terminationTimer = registry.find(METER_FLOW_DURATION)
+		Timer terminationTimer = registry.find("foo" + METER_FLOW_DURATION)
 		                          .tags(Tags.of(TAG_ON_COMPLETE))
 		                          .timer();
 
@@ -162,11 +159,6 @@ public class FluxMetricsFuseableTest {
 
 	@Test
 	public void queuePollError() {
-		//prepare registry with mock clock
-		MockClock clock = new MockClock();
-		removeRegistry();
-		registry = new SimpleMeterRegistry(SimpleConfig.DEFAULT, clock);
-
 		AssertSubscriber<Integer> testSubscriber = AssertSubscriber.create();
 		FluxMetricsFuseable.MetricsFuseableSubscriber<Integer> fuseableSubscriber =
 				new FluxMetricsFuseable.MetricsFuseableSubscriber<>(testSubscriber,
@@ -188,7 +180,7 @@ public class FluxMetricsFuseableTest {
 		                                 .withMessage("AssertQueueSubscriber poll error");
 
 		//test meters
-		Timer terminationTimer = registry.find(METER_FLOW_DURATION)
+		Timer terminationTimer = registry.find("foo" + METER_FLOW_DURATION)
 		                          .tags(Tags.of(TAG_ON_ERROR))
 		                          .timer();
 
@@ -221,7 +213,7 @@ public class FluxMetricsFuseableTest {
 	public void testUsesMicrometerFuseable() {
 		AtomicReference<Subscription> subRef = new AtomicReference<>();
 
-		new FluxMetricsFuseable<>(Flux.just("foo"), registry)
+		new FluxMetricsFuseable<>(Flux.just("foo"))
 				.doOnSubscribe(subRef::set)
 				.subscribe();
 
@@ -234,24 +226,22 @@ public class FluxMetricsFuseableTest {
 		final Flux<Integer> namedSource = Flux.range(1, 40)
 		                                      .map(i -> 100 / (40 - i))
 		                                      .name("foo");
-		
-		final Flux<Integer> unnamed = new FluxMetricsFuseable<>(unnamedSource, registry)
+
+		final Flux<Integer> unnamed = new FluxMetricsFuseable<>(unnamedSource)
 				.onErrorResume(e -> Mono.empty());
-		final Flux<Integer> named = new FluxMetricsFuseable<>(namedSource, registry)
+		final Flux<Integer> named = new FluxMetricsFuseable<>(namedSource)
 				.onErrorResume(e -> Mono.empty());
 
 		Mono.when(unnamed, named).block();
 
 		Timer unnamedMeter = registry
-				.find(METER_FLOW_DURATION)
+				.find(REACTOR_DEFAULT_NAME + METER_FLOW_DURATION)
 				.tags(Tags.of(TAG_ON_ERROR))
-				.tag(TAG_SEQUENCE_NAME, REACTOR_DEFAULT_NAME)
 				.timer();
 
 		Timer namedMeter = registry
-				.find(METER_FLOW_DURATION)
+				.find("foo" + METER_FLOW_DURATION)
 				.tags(Tags.of(TAG_ON_ERROR))
-				.tag(TAG_SEQUENCE_NAME, "foo")
 				.timer();
 
 		assertThat(unnamedMeter).isNotNull();
@@ -264,15 +254,14 @@ public class FluxMetricsFuseableTest {
 	@Test
 	public void usesTagsFuseable() {
 		Flux<Integer> source = Flux.range(1, 8)
+								   .name("usesTags")
 		                           .tag("tag1", "A")
-		                           .name("usesTags")
 		                           .tag("tag2", "foo");
-		new FluxMetricsFuseable<>(source, registry)
-		    .blockLast();
+
+		new FluxMetricsFuseable<>(source).blockLast();
 
 		Timer meter = registry
-				.find(METER_ON_NEXT_DELAY)
-				.tag(TAG_SEQUENCE_NAME, "usesTags")
+				.find("usesTags" + METER_ON_NEXT_DELAY)
 				.tag("tag1", "A")
 				.tag("tag2", "foo")
 				.timer();
@@ -284,18 +273,18 @@ public class FluxMetricsFuseableTest {
 	@Test
 	public void onNextTimerCountsFuseable() {
 		Flux<Integer> source = Flux.range(1, 123);
-		new FluxMetricsFuseable<>(source, registry)
-		    .blockLast();
+
+		new FluxMetricsFuseable<>(source).blockLast();
 
 		Timer nextMeter = registry
-				.find(METER_ON_NEXT_DELAY)
+				.find(REACTOR_DEFAULT_NAME + METER_ON_NEXT_DELAY)
 				.timer();
 
 		assertThat(nextMeter).isNotNull();
 		assertThat(nextMeter.count()).isEqualTo(123L);
 
 		Flux<Integer> source2 = Flux.range(1, 10);
-		new FluxMetricsFuseable<>(source2, registry)
+		new FluxMetricsFuseable<>(source2)
 		    .take(3)
 		    .blockLast();
 
@@ -303,7 +292,7 @@ public class FluxMetricsFuseableTest {
 
 		Flux<Integer> source3 = Flux.range(1, 1000)
 		    .name("foo");
-		new FluxMetricsFuseable<>(source3, registry)
+		new FluxMetricsFuseable<>(source3)
 		    .blockLast();
 
 		assertThat(nextMeter.count())
@@ -311,6 +300,170 @@ public class FluxMetricsFuseableTest {
 				.isEqualTo(126L);
 	}
 
+	@Test
+	public void completeEmptyNoFusion() {
+		Flux<Integer> source = Flux.<Integer>empty().hide();
+
+		StepVerifier.create(new FluxMetricsFuseable<>(source))
+		            .expectNoFusionSupport()
+		            .verifyComplete();
+
+		Timer stcCompleteCounter = registry.find(REACTOR_DEFAULT_NAME + METER_FLOW_DURATION)
+		                                   .tags(Tags.of(TAG_ON_COMPLETE))
+		                                   .timer();
+
+		Timer stcCompleteEmptyCounter = registry.find(REACTOR_DEFAULT_NAME + METER_FLOW_DURATION)
+		                                        .tags(Tags.of(TAG_ON_COMPLETE_EMPTY))
+		                                        .timer();
+
+		assertThat(stcCompleteCounter)
+				.as("complete with element")
+				.isNull();
+
+		assertThat(stcCompleteEmptyCounter)
+				.as("complete without any element")
+				.isNotNull()
+				.satisfies(timer -> assertThat(timer.count()).as("timer count").isOne());
+	}
+
+	@Test
+	public void completeEmptyAsyncFusion() {
+		Flux<Integer> source = Flux.range(1, 10)
+				.filter(i -> i > 100)
+				.onBackpressureBuffer();
+
+		StepVerifier.create(new FluxMetricsFuseable<>(source))
+		            .expectFusion(Fuseable.ASYNC)
+		            .verifyComplete();
+
+		Timer stcCompleteCounter = registry.find(REACTOR_DEFAULT_NAME + METER_FLOW_DURATION)
+		                                   .tags(Tags.of(TAG_ON_COMPLETE))
+		                                   .timer();
+
+		Timer stcCompleteEmptyCounter = registry.find(REACTOR_DEFAULT_NAME + METER_FLOW_DURATION)
+		                                        .tags(Tags.of(TAG_ON_COMPLETE_EMPTY))
+		                                        .timer();
+
+		assertThat(stcCompleteCounter)
+				.as("complete with element")
+				.isNull();
+
+		assertThat(stcCompleteEmptyCounter)
+				.as("complete without any element")
+				.isNotNull()
+				.satisfies(timer -> assertThat(timer.count()).as("timer count").isOne());
+	}
+
+	@Test
+	public void completeEmptySyncFusion() {
+		FluxMetricsFuseable.MetricsFuseableSubscriber<Object> subscriber =
+				new FluxMetricsFuseable.MetricsFuseableSubscriber<>(AssertSubscriber.create(),
+						registry, clock, REACTOR_DEFAULT_NAME, DEFAULT_TAGS_MONO);
+
+		//trigger the fusion and polling
+		subscriber.onSubscribe(new FluxPeekFuseableTest.AssertQueueSubscription<>());
+		assertThat(subscriber.requestFusion(Fuseable.SYNC)).as("SYNC requested").isEqualTo(Fuseable.SYNC);
+		assertThat(subscriber.poll()).as("poll empty").isNull();
+
+		Timer stcCompleteCounter = registry.find(REACTOR_DEFAULT_NAME + METER_FLOW_DURATION)
+		                                   .tags(Tags.of(TAG_ON_COMPLETE))
+		                                   .timer();
+
+		Timer stcCompleteEmptyCounter = registry.find(REACTOR_DEFAULT_NAME + METER_FLOW_DURATION)
+		                                        .tags(Tags.of(TAG_ON_COMPLETE_EMPTY))
+		                                        .timer();
+
+		assertThat(stcCompleteCounter)
+				.as("complete with element")
+				.isNull();
+
+		assertThat(stcCompleteEmptyCounter)
+				.as("complete without any element")
+				.isNotNull()
+				.satisfies(timer -> assertThat(timer.count()).as("timer count").isOne());
+	}
+
+	@Test
+	public void completeWithElementNoFusion() {
+		Flux<Integer> source = Flux.just(1, 2, 3).hide();
+
+		StepVerifier.create(new FluxMetricsFuseable<>(source))
+		            .expectNoFusionSupport()
+		            .expectNext(1, 2, 3)
+		            .verifyComplete();
+
+		Timer stcCompleteCounter = registry.find(REACTOR_DEFAULT_NAME + METER_FLOW_DURATION)
+		                                   .tags(Tags.of(TAG_ON_COMPLETE))
+		                                   .timer();
+
+		Timer stcCompleteEmptyCounter = registry.find(REACTOR_DEFAULT_NAME + METER_FLOW_DURATION)
+		                                        .tags(Tags.of(TAG_ON_COMPLETE_EMPTY))
+		                                        .timer();
+
+		assertThat(stcCompleteCounter)
+				.as("complete with element")
+				.isNotNull()
+				.satisfies(timer -> assertThat(timer.count()).as("timer count").isOne());
+
+		assertThat(stcCompleteEmptyCounter)
+				.as("complete without any element")
+				.isNull();
+	}
+
+
+	@Test
+	public void completeWithElementAsyncFusion() {
+		Flux<Integer> source = Flux.range(1, 3).onBackpressureBuffer();
+
+		StepVerifier.create(new FluxMetricsFuseable<>(source))
+		            .expectFusion(Fuseable.ASYNC)
+		            .expectNext(1, 2, 3)
+		            .verifyComplete();
+
+		Timer stcCompleteCounter = registry.find(REACTOR_DEFAULT_NAME + METER_FLOW_DURATION)
+		                                   .tags(Tags.of(TAG_ON_COMPLETE))
+		                                   .timer();
+
+		Timer stcCompleteEmptyCounter = registry.find(REACTOR_DEFAULT_NAME + METER_FLOW_DURATION)
+		                                        .tags(Tags.of(TAG_ON_COMPLETE_EMPTY))
+		                                        .timer();
+
+		assertThat(stcCompleteCounter)
+				.as("complete with element")
+				.isNotNull()
+				.satisfies(timer -> assertThat(timer.count()).as("timer count").isOne());
+
+		assertThat(stcCompleteEmptyCounter)
+				.as("complete without any element")
+				.isNull();
+	}
+
+	@Test
+	public void completeWithElementSyncFusion() {
+		Flux<Integer> source = Flux.just(1, 2, 3);
+
+		StepVerifier.create(new FluxMetricsFuseable<>(source))
+		            .expectFusion(Fuseable.SYNC)
+		            .expectNext(1, 2, 3)
+		            .verifyComplete();
+
+		Timer stcCompleteCounter = registry.find(REACTOR_DEFAULT_NAME + METER_FLOW_DURATION)
+		                                   .tags(Tags.of(TAG_ON_COMPLETE))
+		                                   .timer();
+
+		Timer stcCompleteEmptyCounter = registry.find(REACTOR_DEFAULT_NAME + METER_FLOW_DURATION)
+		                                        .tags(Tags.of(TAG_ON_COMPLETE_EMPTY))
+		                                        .timer();
+
+		assertThat(stcCompleteCounter)
+				.as("complete with element")
+				.isNotNull()
+				.satisfies(timer -> assertThat(timer.count()).as("timer count").isOne());
+
+		assertThat(stcCompleteEmptyCounter)
+				.as("complete without any element")
+				.isNull();
+	}
 
 	@Test
 	public void subscribeToCompleteFuseable() {
@@ -324,20 +477,21 @@ public class FluxMetricsFuseableTest {
 			                          }
 		                          })
 		                          .map(i -> "foo");
-		StepVerifier.create(new FluxMetricsFuseable<>(source, registry))
+
+		StepVerifier.create(new FluxMetricsFuseable<>(source))
 		            .expectFusion(Fuseable.SYNC) //just only supports SYNC
 		            .expectNext("foo")
 		            .verifyComplete();
 
-		Timer stcCompleteTimer = registry.find(METER_FLOW_DURATION)
+		Timer stcCompleteTimer = registry.find(REACTOR_DEFAULT_NAME + METER_FLOW_DURATION)
 		                                 .tags(Tags.of(TAG_ON_COMPLETE))
 		                                 .timer();
 
-		Timer stcErrorTimer = registry.find(METER_FLOW_DURATION)
+		Timer stcErrorTimer = registry.find(REACTOR_DEFAULT_NAME + METER_FLOW_DURATION)
 		                              .tags(Tags.of(TAG_ON_ERROR))
 		                              .timer();
 
-		Timer stcCancelTimer = registry.find(METER_FLOW_DURATION)
+		Timer stcCancelTimer = registry.find(REACTOR_DEFAULT_NAME + METER_FLOW_DURATION)
 		                               .tags(Tags.of(TAG_CANCEL))
 		                               .timer();
 
@@ -362,19 +516,20 @@ public class FluxMetricsFuseableTest {
 		Flux<Long> source = Flux.just(0L)
 		                        .delayElements(Duration.ofMillis(100))
 		                        .map(v -> 100 / v);
-		new FluxMetricsFuseable<>(source, registry)
+
+		new FluxMetricsFuseable<>(source)
 		    .onErrorReturn(-1L)
 		    .blockLast();
 
-		Timer stcCompleteTimer = registry.find(METER_FLOW_DURATION)
+		Timer stcCompleteTimer = registry.find(REACTOR_DEFAULT_NAME + METER_FLOW_DURATION)
 		                                 .tags(Tags.of(TAG_ON_COMPLETE))
 		                                 .timer();
 
-		Timer stcErrorTimer = registry.find(METER_FLOW_DURATION)
+		Timer stcErrorTimer = registry.find(REACTOR_DEFAULT_NAME + METER_FLOW_DURATION)
 		                              .tags(Tags.of(TAG_ON_ERROR))
 		                              .timer();
 
-		Timer stcCancelTimer = registry.find(METER_FLOW_DURATION)
+		Timer stcCancelTimer = registry.find(REACTOR_DEFAULT_NAME + METER_FLOW_DURATION)
 		                               .tags(Tags.of(TAG_CANCEL))
 		                               .timer();
 
@@ -396,10 +551,10 @@ public class FluxMetricsFuseableTest {
 	@Test
 	public void countsSubscriptionsFuseable() {
 		Flux<Integer> source = Flux.range(1, 10);
-		Flux<Integer> test = new FluxMetricsFuseable<>(source, registry);
+		Flux<Integer> test = new FluxMetricsFuseable<>(source);
 
 		test.subscribe();
-		Counter meter = registry.find(METER_SUBSCRIBED)
+		Counter meter = registry.find(REACTOR_DEFAULT_NAME + METER_SUBSCRIBED)
 		                        .counter();
 
 		assertThat(meter).isNotNull();
@@ -414,10 +569,10 @@ public class FluxMetricsFuseableTest {
 	@Test
 	public void requestTrackingDisabledIfNotNamedFuseable() {
 		Flux<Integer> source = Flux.range(1, 10);
-		new FluxMetricsFuseable<>(source, registry)
-		    .blockLast();
 
-		DistributionSummary meter = registry.find(METER_REQUESTED)
+		new FluxMetricsFuseable<>(source).blockLast();
+
+		DistributionSummary meter = registry.find(REACTOR_DEFAULT_NAME + METER_REQUESTED)
 		                                    .summary();
 
 		if (meter != null) { //meter could be null in some tests
@@ -427,18 +582,16 @@ public class FluxMetricsFuseableTest {
 
 	@Test
 	public void requestTrackingHasMeterForNamedSequenceFuseable() {
-		Flux<Integer> source = Flux.range(1, 10)
-		    .name("foo");
-		new FluxMetricsFuseable<>(source, registry)
-		    .blockLast();
+		Flux<Integer> source = Flux.range(1, 10).name("foo");
 
-		DistributionSummary meter = registry.find(METER_REQUESTED)
+		new FluxMetricsFuseable<>(source).blockLast();
+
+		DistributionSummary meter = registry.find("foo" + METER_REQUESTED)
 		                                    .summary();
 
 		assertThat(meter).as("global find").isNotNull();
 
-		meter = registry.find(METER_REQUESTED)
-		                .tag(TAG_SEQUENCE_NAME, "foo")
+		meter = registry.find("foo" + METER_REQUESTED)
 		                .summary();
 
 		assertThat(meter).as("tagged find").isNotNull();
@@ -452,13 +605,11 @@ public class FluxMetricsFuseableTest {
 				subscription.request(1);
 			}
 		};
-		Flux<Integer> source = Flux.range(1, 10)
-		    .name("foo");
-		new FluxMetricsFuseable<>(source, registry)
-		    .subscribe(bs);
+		Flux<Integer> source = Flux.range(1, 10).name("foo");
 
-		DistributionSummary meter = registry.find(METER_REQUESTED)
-		                                    .tag(TAG_SEQUENCE_NAME, "foo")
+		new FluxMetricsFuseable<>(source).subscribe(bs);
+
+		DistributionSummary meter = registry.find("foo" + METER_REQUESTED)
 		                                    .summary();
 
 		assertThat(meter).as("meter").isNotNull();
@@ -471,5 +622,14 @@ public class FluxMetricsFuseableTest {
 		bs.request(100);
 		assertThat(meter.totalAmount()).isEqualTo(108);
 		assertThat(meter.max()).isEqualTo(100);
+	}
+
+	@Test
+	public void scanOperator(){
+	    Flux<Integer> parent = Flux.just(1);
+		FluxMetricsFuseable<Integer> test = new FluxMetricsFuseable<>(parent);
+
+		assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 	}
 }

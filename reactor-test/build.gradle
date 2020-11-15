@@ -37,6 +37,7 @@ ext {
 
 dependencies {
 	api project(":reactor-core")
+	compileOnly "com.google.code.findbugs:jsr305:${findbugsVersion}"
 
 	// Not putting kotlin-stdlib as implementation to not force it as a transitive lib
 	compileOnly "org.jetbrains.kotlin:kotlin-stdlib:${kotlinVersion}"
@@ -84,7 +85,8 @@ task japicmp(type: JapicmpTask) {
 	ignoreMissingClasses = true
 	includeSynthetic = true
 
-	//TODO after a release, remove the reactor-test exclusions below if any
+	//TODO after a .0 release, remove the reactor-test exclusions below if any
+	methodExcludes = [ ]
 }
 
 tasks.withType(Test).all {

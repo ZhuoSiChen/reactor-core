@@ -25,25 +25,20 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import io.micrometer.core.instrument.Counter;
-import io.micrometer.core.instrument.DistributionSummary;
-import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.core.instrument.Tag;
-import io.micrometer.core.instrument.Tags;
-import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.*;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.assertj.core.api.SoftAssertions;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.reactivestreams.Subscription;
-
 import reactor.core.CoreSubscriber;
 import reactor.core.Disposable;
 import reactor.core.Scannable;
 import reactor.core.publisher.MonoMetrics.MetricsSubscriber;
 import reactor.test.StepVerifier;
 import reactor.test.publisher.TestPublisher;
+import reactor.util.Metrics;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static reactor.core.publisher.FluxMetrics.*;
@@ -52,15 +47,25 @@ import static reactor.test.publisher.TestPublisher.Violation.CLEANUP_ON_TERMINAT
 public class MonoMetricsTest {
 
 	private MeterRegistry registry;
+	private MeterRegistry previousRegistry;
 
 	@BeforeEach
 	public void setupRegistry() {
 		registry = new SimpleMeterRegistry();
+		previousRegistry = Metrics.MicrometerConfiguration.useRegistry(registry);
 	}
 
 	@AfterEach
 	public void removeRegistry() {
 		registry.close();
+		Metrics.MicrometerConfiguration.useRegistry(previousRegistry);
+	}
+
+	@Test
+	public void scanOperator(){
+		MonoMetrics<String> test = new MonoMetrics<>(Mono.just("foo"));
+
+		assertThat(test.scan(Attr.RUN_STYLE)).isSameAs(Attr.RunStyle.SYNC);
 	}
 
 	@Test
@@ -73,7 +78,7 @@ public class MonoMetricsTest {
 				delegate.subscribe(actual);
 			}
 		};
-		MonoMetrics<String> test = new MonoMetrics<>(source, registry);
+		MonoMetrics<String> test = new MonoMetrics<>(source);
 
 		assertThat(Scannable.from(source).isScanAvailable())
 				.as("source scan unavailable").isFalse();
@@ -83,7 +88,7 @@ public class MonoMetricsTest {
 	@Test
 	public void sequenceNameFromScannableNoName() {
 		Mono<String> source = Mono.just("foo");
-		MonoMetrics<String> test = new MonoMetrics<>(source, registry);
+		MonoMetrics<String> test = new MonoMetrics<>(source);
 
 		assertThat(Scannable.from(source).isScanAvailable())
 				.as("source scan available").isTrue();
@@ -93,7 +98,7 @@ public class MonoMetricsTest {
 	@Test
 	public void sequenceNameFromScannableName() {
 		Mono<String> source = Mono.just("foo").name("foo").hide().hide();
-		MonoMetrics<String> test = new MonoMetrics<>(source, registry);
+		MonoMetrics<String> test = new MonoMetrics<>(source);
 
 		assertThat(Scannable.from(source).isScanAvailable())
 				.as("source scan available").isTrue();
@@ -104,7 +109,7 @@ public class MonoMetricsTest {
 	public void testUsesMicrometer() {
 		AtomicReference<Subscription> subRef = new AtomicReference<>();
 
-		new MonoMetrics<>(Mono.just("foo").hide(), registry)
+		new MonoMetrics<>(Mono.just("foo").hide())
 				.doOnSubscribe(subRef::set)
 				.subscribe();
 
@@ -115,29 +120,29 @@ public class MonoMetricsTest {
 	public void splitMetricsOnName() {
 		final Mono<Integer> unnamedSource = Mono.<Integer>error(new ArithmeticException("boom"))
 				.hide();
-		final Mono<Integer> unnamed = new MonoMetrics<>(unnamedSource, registry)
+		final Mono<Integer> unnamed = new MonoMetrics<>(unnamedSource)
 				.onErrorResume(e -> Mono.empty());
+
 		final Mono<Integer> namedSource = Mono.just(40)
 		                                      .name("foo")
 		                                      .map(i -> 100 / (40 - i))
 		                                      .hide();
-		final Mono<Integer> named = new MonoMetrics<>(namedSource, registry)
+
+		final Mono<Integer> named = new MonoMetrics<>(namedSource)
 				.onErrorResume(e -> Mono.empty());
 
 		Mono.when(unnamed, named).block();
 
 		Timer unnamedMeter = registry
-				.find(METER_FLOW_DURATION)
+				.find(REACTOR_DEFAULT_NAME + METER_FLOW_DURATION)
 				.tags(Tags.of(TAG_ON_ERROR))
 				.tag(TAG_KEY_EXCEPTION, ArithmeticException.class.getName())
-				.tag(TAG_SEQUENCE_NAME, REACTOR_DEFAULT_NAME)
 				.timer();
 
 		Timer namedMeter = registry
-				.find(METER_FLOW_DURATION)
+				.find("foo" + METER_FLOW_DURATION)
 				.tags(Tags.of(TAG_ON_ERROR))
 				.tag(TAG_KEY_EXCEPTION, ArithmeticException.class.getName())
-				.tag(TAG_SEQUENCE_NAME, "foo")
 				.timer();
 
 		assertThat(unnamedMeter).isNotNull();
@@ -150,17 +155,16 @@ public class MonoMetricsTest {
 	@Test
 	public void usesTags() {
 		Mono<Integer> source = Mono.just(1)
-		                           .tag("tag1", "A")
-		                           .name("usesTags")
-		                           .tag("tag2", "foo")
+								   .name("usesTags")
+								   .tag("tag1", "A")
+								   .tag("tag2", "foo")
 		                           .hide();
-		new MonoMetrics<>(source, registry)
-				.block();
+
+		new MonoMetrics<>(source).block();
 
 		Timer meter = registry
-				.find(METER_FLOW_DURATION)
+				.find("usesTags" + METER_FLOW_DURATION)
 				.tags(Tags.of(TAG_ON_COMPLETE))
-				.tag(TAG_SEQUENCE_NAME, "usesTags")
 				.tag("tag1", "A")
 				.tag("tag2", "foo")
 				.timer();
@@ -171,13 +175,12 @@ public class MonoMetricsTest {
 
 	@Test
 	public void noOnNextTimer() {
-		Mono<Integer> source = Mono.just(1)
-		                           .hide();
-		new MonoMetrics<>(source, registry)
-				.block();
+		Mono<Integer> source = Mono.just(1).hide();
+
+		new MonoMetrics<>(source).block();
 
 		Timer nextMeter = registry
-				.find(METER_ON_NEXT_DELAY)
+				.find(REACTOR_DEFAULT_NAME + METER_ON_NEXT_DELAY)
 				.timer();
 
 		assertThat(nextMeter).isNull();
@@ -188,14 +191,13 @@ public class MonoMetricsTest {
 		TestPublisher<Integer> testPublisher = TestPublisher.createNoncompliant(CLEANUP_ON_TERMINATE);
 		Mono<Integer> source = testPublisher.mono().hide();
 
-		new MonoMetrics<>(source, registry)
-				.subscribe();
+		new MonoMetrics<>(source).subscribe();
 
 		testPublisher.complete()
 		             .next(2);
 
 		Counter malformedMeter = registry
-				.find(METER_MALFORMED)
+				.find(REACTOR_DEFAULT_NAME + METER_MALFORMED)
 				.counter();
 
 		assertThat(malformedMeter).isNotNull();
@@ -210,14 +212,13 @@ public class MonoMetricsTest {
 		TestPublisher<Integer> testPublisher = TestPublisher.createNoncompliant(CLEANUP_ON_TERMINATE);
 		Mono<Integer> source = testPublisher.mono().hide();
 
-		new MonoMetrics<>(source, registry)
-				.subscribe();
+		new MonoMetrics<>(source).subscribe();
 
 		testPublisher.complete()
 		             .error(dropError);
 
 		Counter malformedMeter = registry
-				.find(METER_MALFORMED)
+				.find(REACTOR_DEFAULT_NAME + METER_MALFORMED)
 				.counter();
 
 		assertThat(malformedMeter).isNotNull();
@@ -226,21 +227,66 @@ public class MonoMetricsTest {
 	}
 
 	@Test
-	public void subscribeToComplete() {
-		Mono<Long> source = Mono.delay(Duration.ofMillis(100))
-		                          .hide();
-		new MonoMetrics<>(source, registry)
-				.block();
+	public void completeEmpty() {
+		Mono<Integer> source = Mono.empty();
 
-		Timer stcCompleteTimer = registry.find(METER_FLOW_DURATION)
+		new MonoMetrics<>(source).block();
+
+		Timer stcCompleteCounter = registry.find(REACTOR_DEFAULT_NAME + METER_FLOW_DURATION)
+											.tags(Tags.of(TAG_ON_COMPLETE))
+											.timer();
+
+		Timer stcCompleteEmptyCounter = registry.find(REACTOR_DEFAULT_NAME + METER_FLOW_DURATION)
+												.tags(Tags.of(TAG_ON_COMPLETE_EMPTY))
+												.timer();
+
+		assertThat(stcCompleteCounter)
+				.as("complete with element")
+				.isNull();
+
+		assertThat(stcCompleteEmptyCounter.count())
+				.as("complete without any element")
+				.isOne();
+	}
+
+	@Test
+	public void completeWithElement() {
+		Mono<Integer> source = Mono.just(1);
+
+		new MonoMetrics<>(source).block();
+
+		Timer stcCompleteCounter = registry.find(REACTOR_DEFAULT_NAME + METER_FLOW_DURATION)
+				.tags(Tags.of(TAG_ON_COMPLETE))
+				.timer();
+
+		Timer stcCompleteEmptyCounter = registry.find(REACTOR_DEFAULT_NAME + METER_FLOW_DURATION)
+				.tags(Tags.of(TAG_ON_COMPLETE_EMPTY))
+				.timer();
+
+		assertThat(stcCompleteCounter.count())
+				.as("complete with element")
+				.isOne();
+
+		assertThat(stcCompleteEmptyCounter)
+				.as("complete without any element")
+				.isNull();
+	}
+
+	@Test
+	public void subscribeToComplete() {
+		Mono<Long> source = Mono.delay(Duration.ofMillis(100)).hide();
+
+		new MonoMetrics<>(source).block();
+
+		Timer stcCompleteTimer = registry.find(REACTOR_DEFAULT_NAME + METER_FLOW_DURATION)
 		                                 .tags(Tags.of(TAG_ON_COMPLETE))
 		                                 .timer();
 
-		Timer stcErrorTimer = registry.find(METER_FLOW_DURATION)
+		Timer stcErrorTimer = registry.find(REACTOR_DEFAULT_NAME + METER_FLOW_DURATION)
 		                              .tags(Tags.of(TAG_ON_ERROR))
 		                              .timer();
 
-		Timer stcCancelTimer = registry.find(METER_FLOW_DURATION)
+		Timer stcCancelTimer = registry.find(REACTOR_DEFAULT_NAME + METER_FLOW_DURATION)
 		                               .tags(Tags.of(TAG_CANCEL))
 		                               .timer();
 
@@ -262,19 +308,20 @@ public class MonoMetricsTest {
 		Mono<Long> source = Mono.delay(Duration.ofMillis(100))
 		                           .map(v -> 100 / v)
 		                           .hide();
-		new MonoMetrics<>(source, registry)
+
+		new MonoMetrics<>(source)
 				.onErrorReturn(-1L)
 				.block();
 
-		Timer stcCompleteTimer = registry.find(METER_FLOW_DURATION)
+		Timer stcCompleteTimer = registry.find(REACTOR_DEFAULT_NAME + METER_FLOW_DURATION)
 		                                 .tags(Tags.of(TAG_ON_COMPLETE))
 		                                 .timer();
 
-		Timer stcErrorTimer = registry.find(METER_FLOW_DURATION)
+		Timer stcErrorTimer = registry.find(REACTOR_DEFAULT_NAME + METER_FLOW_DURATION)
 		                              .tags(Tags.of(TAG_ON_ERROR))
 		                              .timer();
 
-		Timer stcCancelTimer = registry.find(METER_FLOW_DURATION)
+		Timer stcCancelTimer = registry.find(REACTOR_DEFAULT_NAME + METER_FLOW_DURATION)
 		                               .tags(Tags.of(TAG_CANCEL))
 		                               .timer();
 
@@ -297,19 +344,19 @@ public class MonoMetricsTest {
 	public void subscribeToCancel() throws InterruptedException {
 		Mono<Long> source = Mono.delay(Duration.ofMillis(200))
 		                           .hide();
-		Disposable disposable = new MonoMetrics<>(source, registry).subscribe();
+		Disposable disposable = new MonoMetrics<>(source).subscribe();
 		Thread.sleep(100);
 		disposable.dispose();
 
-		Timer stcCompleteTimer = registry.find(METER_FLOW_DURATION)
+		Timer stcCompleteTimer = registry.find(REACTOR_DEFAULT_NAME + METER_FLOW_DURATION)
 		                                 .tags(Tags.of(TAG_ON_COMPLETE))
 		                                 .timer();
 
-		Timer stcErrorTimer = registry.find(METER_FLOW_DURATION)
+		Timer stcErrorTimer = registry.find(REACTOR_DEFAULT_NAME + METER_FLOW_DURATION)
 		                              .tags(Tags.of(TAG_ON_ERROR))
 		                              .timer();
 
-		Timer stcCancelTimer = registry.find(METER_FLOW_DURATION)
+		Timer stcCancelTimer = registry.find(REACTOR_DEFAULT_NAME + METER_FLOW_DURATION)
 		                               .tags(Tags.of(TAG_CANCEL))
 		                               .timer();
 
@@ -330,12 +377,11 @@ public class MonoMetricsTest {
 
 	@Test
 	public void countsSubscriptions() {
-		Mono<Integer> source = Mono.just(1)
-		                           .hide();
-		Mono<Integer> test = new MonoMetrics<>(source, registry);
+		Mono<Integer> source = Mono.just(1).hide();
+		Mono<Integer> test = new MonoMetrics<>(source);
 
 		test.subscribe();
-		Counter meter = registry.find(METER_SUBSCRIBED)
+		Counter meter = registry.find(REACTOR_DEFAULT_NAME + METER_SUBSCRIBED)
 		                        .counter();
 
 		assertThat(meter).isNotNull();
@@ -352,16 +398,15 @@ public class MonoMetricsTest {
 		Mono<Integer> source = Mono.just(10)
 		                           .name("foo")
 		                           .hide();
-		new MonoMetrics<>(source, registry)
-				.block();
 
-		DistributionSummary meter = registry.find(METER_REQUESTED)
+		new MonoMetrics<>(source).block();
+
+		DistributionSummary meter = registry.find("foo" + METER_REQUESTED)
 		                                    .summary();
 
 		assertThat(meter).as("global find").isNull();
 
-		meter = registry.find(METER_REQUESTED)
-		                .tag(TAG_SEQUENCE_NAME, "foo")
+		meter = registry.find("foo" + METER_REQUESTED)
 		                .summary();
 
 		assertThat(meter).as("tagged find").isNull();
@@ -371,20 +416,19 @@ public class MonoMetricsTest {
 	@Test
 	public void flowDurationTagsConsistency() {
 		Mono<Integer> source1 = Mono.just(1)
-		                            .name("normal")
 		                            .hide();
+
 		Mono<Object> source2 = Mono.error(new IllegalStateException("dummy"))
-		                           .name("error")
 		                           .hide();
 
-		new MonoMetrics<>(source1, registry)
-				.block();
-		new MonoMetrics<>(source2, registry)
+		new MonoMetrics<>(source1).block();
+
+		new MonoMetrics<>(source2)
 				.onErrorReturn(0)
 				.block();
 
 		Set<Set<String>> uniqueTagKeySets = registry
-				.find(METER_FLOW_DURATION)
+				.find(REACTOR_DEFAULT_NAME + METER_FLOW_DURATION)
 				.meters()
 				.stream()
 				.map(it -> it.getId().getTags())
@@ -402,7 +446,7 @@ public class MonoMetricsTest {
 		assertThat(source.metrics()).isInstanceOf(MonoMetricsFuseable.class);
 
 		//now use the test version with local registry
-		new MonoMetricsFuseable<List<Integer>>(source, registry)
+		new MonoMetricsFuseable<List<Integer>>(source)
 		    .flatMapIterable(Function.identity())
 		    .as(StepVerifier::create)
 		    .expectNext(1, 2, 3)
@@ -420,7 +464,7 @@ public class MonoMetricsTest {
 		assertThat(source.metrics()).isInstanceOf(MonoMetricsFuseable.class);
 
 		//now use the test version with local registry
-		new MonoMetricsFuseable<List<Integer>>(source, registry)
+		new MonoMetricsFuseable<List<Integer>>(source)
 		    .flatMapIterable(Function.identity())
 		    .as(StepVerifier::create)
 		    .expectNext(1, 2, 3)

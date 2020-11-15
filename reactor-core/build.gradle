@@ -13,12 +13,25 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 import me.champeau.gradle.japicmp.JapicmpTask
+
+buildscript {
+	repositories {
+		jcenter()
+	}
+
+	dependencies {
+		// when updating this plugin, revisit pinning the version of the jcstress jar near line 356
+		classpath 'com.github.erizo.gradle:jcstress-gradle-plugin:0.8.6'
+	}
+}
 
 apply plugin: 'idea' //needed to avoid IDEA seeing the jmh folder as source
 apply plugin: 'biz.aQute.bnd.builder'
 apply plugin: 'org.unbroken-dome.test-sets'
 apply plugin: 'kotlin'
+apply plugin: 'jcstress'
 
 ext {
 	bndOptions = [
@@ -61,8 +74,8 @@ dependencies {
 	}
 
 	// JSR-305 annotations
-	compileOnly "com.google.code.findbugs:jsr305:$jsr305Version"
-	testCompileOnly "com.google.code.findbugs:jsr305:$jsr305Version"
+	compileOnly "com.google.code.findbugs:jsr305:${findbugsVersion}"
+	testCompileOnly "com.google.code.findbugs:jsr305:${findbugsVersion}"
 
 	//Optional Logging Operator
 	compileOnly "org.slf4j:slf4j-api:$slf4jVersion"
@@ -89,7 +102,7 @@ dependencies {
 	testImplementation "org.junit.jupiter:junit-jupiter-params"
 	testRuntimeOnly "org.junit.jupiter:junit-jupiter-engine"
 
-	testRuntimeOnly "ch.qos.logback:logback-classic:$logbackVersion"
+	testImplementation "ch.qos.logback:logback-classic:$logbackVersion"
 	// Testing
 	testImplementation(project(":reactor-test")) {
 		exclude module: 'reactor-core'
@@ -133,17 +146,24 @@ task japicmp(type: JapicmpTask) {
 
 	oldClasspath = files("${buildDir}/baselineLibs/reactor-core-${compatibleVersion}.jar")
 	newClasspath = files(jar.archiveFile)
-	onlyBinaryIncompatibleModified = true
-	failOnModification = true
-	failOnSourceIncompatibility = true
+	onlyBinaryIncompatibleModified = false
+	failOnModification = false
+	failOnSourceIncompatibility = false
 	txtOutputFile = file("${project.buildDir}/reports/japi.txt")
 	ignoreMissingClasses = true
 	includeSynthetic = true
 
-	//TODO after a release, bump the gradle.properties baseline
-	//TODO after a release, remove the reactor-core exclusions below if any
-//	classExcludes = []
-//	methodExcludes = ["reactor.core.Scannable#operatorName()"]
+	//TODO after a .0 release, bump the gradle.properties baseline
+	//TODO after a .0 release, remove the reactor-core exclusions below if any
+	classExcludes = [ ]
+	methodExcludes = [ ]
+}
+
+gradle.taskGraph.afterTask { task, state ->
+	if (task instanceof JapicmpTask && state.failure && ((JapicmpTask) task).richReport == null) {
+		//FIXME print the rich report somehow on console ?
+		print file("${project.buildDir}/reports/japi.txt").getText()
+	}
 }
 
 //complements the javadoc.gradle common configuration
@@ -151,10 +171,7 @@ javadoc {
 	options.overview = "$rootDir/docs/api/overview.html"
 	excludes = [
 			// Must be public due to the ServiceLoader's requirements
-			"reactor/core/scheduler/ReactorBlockHoundIntegration.java",
-			// The following excluded so users don't see them (see #2417)
-			"reactor/core/publisher/TopicProcessor.java",
-			"reactor/core/publisher/WorkQueueProcessor.java"
+			"reactor/core/scheduler/ReactorBlockHoundIntegration.java"
 	]
 	doLast {
 		// work around https://github.com/gradle/gradle/issues/4046
@@ -203,7 +220,7 @@ check {
 	if (!detectedCiServers.contains("TRAVIS")) {
 		dependsOn reactivestreamsTCK
 	}
-	if (!version.endsWith('BUILD-SNAPSHOT')) {
+	if (!version.endsWith('-SNAPSHOT') && !version.contains('-SNAPSHOT-')) { //neither classic nor customized snapshots
 		dependsOn loops
 	}
 }
@@ -227,6 +244,12 @@ jar {
 jacocoTestReport.dependsOn test
 check.dependsOn jacocoTestReport
 check.dependsOn japicmp
+
+jcstress {
+	mode = 'quick'
+	jcstressDependency = "org.openjdk.jcstress:jcstress-core:0.7"
+}
+tasks.check.dependsOn(tasks.jcstress)
 
 if (JavaVersion.current().java9Compatible) {
 	sourceSets {

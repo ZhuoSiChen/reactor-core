@@ -92,7 +92,7 @@ final class FluxCreate<T> extends Flux<T> implements SourceProducer<T> {
 		actual.onSubscribe(sink);
 		try {
 			source.accept(
-					createMode == CreateMode.PUSH_PULL ? new SerializedSink<>(sink) :
+					createMode == CreateMode.PUSH_PULL ? new SerializedFluxSink<>(sink) :
 							sink);
 		}
 		catch (Throwable ex) {
@@ -103,7 +103,8 @@ final class FluxCreate<T> extends Flux<T> implements SourceProducer<T> {
 
 	@Override
 	public Object scanUnsafe(Attr key) {
-		return null; //no particular key to be represented, still useful in hooks
+		if (key == Attr.RUN_STYLE) return Attr.RunStyle.ASYNC;
+		return null;
 	}
 
 	/**
@@ -111,27 +112,27 @@ final class FluxCreate<T> extends Flux<T> implements SourceProducer<T> {
 	 *
 	 * @param <T> the value type
 	 */
-	static final class SerializedSink<T> implements FluxSink<T>, Scannable {
+	static final class SerializedFluxSink<T> implements FluxSink<T>, Scannable {
 
 		final BaseSink<T> sink;
 
 		volatile Throwable error;
 		@SuppressWarnings("rawtypes")
-		static final AtomicReferenceFieldUpdater<SerializedSink, Throwable> ERROR =
-				AtomicReferenceFieldUpdater.newUpdater(SerializedSink.class,
+		static final AtomicReferenceFieldUpdater<SerializedFluxSink, Throwable> ERROR =
+				AtomicReferenceFieldUpdater.newUpdater(SerializedFluxSink.class,
 						Throwable.class,
 						"error");
 
 		volatile int wip;
 		@SuppressWarnings("rawtypes")
-		static final AtomicIntegerFieldUpdater<SerializedSink> WIP =
-				AtomicIntegerFieldUpdater.newUpdater(SerializedSink.class, "wip");
+		static final AtomicIntegerFieldUpdater<SerializedFluxSink> WIP =
+				AtomicIntegerFieldUpdater.newUpdater(SerializedFluxSink.class, "wip");
 
 		final Queue<T> mpscQueue;
 
 		volatile boolean done;
 
-		SerializedSink(BaseSink<T> sink) {
+		SerializedFluxSink(BaseSink<T> sink) {
 			this.sink = sink;
 			this.mpscQueue = Queues.<T>unboundedMultiproducer().get();
 		}
@@ -317,7 +318,7 @@ final class FluxCreate<T> extends Flux<T> implements SourceProducer<T> {
 	static class SerializeOnRequestSink<T> implements FluxSink<T>, Scannable {
 
 		final BaseSink<T> baseSink;
-		SerializedSink<T> serializedSink;
+		SerializedFluxSink<T> serializedSink;
 		FluxSink<T>       sink;
 
 		SerializeOnRequestSink(BaseSink<T> sink) {
@@ -365,7 +366,7 @@ final class FluxCreate<T> extends Flux<T> implements SourceProducer<T> {
 		@Override
 		public FluxSink<T> onRequest(LongConsumer consumer) {
 			if (serializedSink == null) {
-				serializedSink = new SerializedSink<>(baseSink);
+				serializedSink = new SerializedFluxSink<>(baseSink);
 				sink = serializedSink;
 			}
 			return sink.onRequest(consumer);
@@ -585,9 +586,8 @@ final class FluxCreate<T> extends Flux<T> implements SourceProducer<T> {
 		public Object scanUnsafe(Attr key) {
 			if (key == Attr.TERMINATED) return disposable == TERMINATED;
 			if (key == Attr.CANCELLED) return disposable == CANCELLED;
-			if (key == Attr.REQUESTED_FROM_DOWNSTREAM) {
-				return requested;
-			}
+			if (key == Attr.REQUESTED_FROM_DOWNSTREAM) return requested;
+			if (key == Attr.RUN_STYLE) return Attr.RunStyle.ASYNC;
 
 			return InnerProducer.super.scanUnsafe(key);
 		}

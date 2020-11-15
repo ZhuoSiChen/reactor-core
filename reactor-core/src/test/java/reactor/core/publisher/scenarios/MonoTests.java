@@ -33,8 +33,8 @@ import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Hooks;
 import reactor.core.publisher.Mono;
-import reactor.core.publisher.MonoProcessor;
 import reactor.core.publisher.Signal;
+import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Schedulers;
 import reactor.test.StepVerifier;
 import reactor.test.publisher.TestPublisher;
@@ -44,6 +44,7 @@ import reactor.util.function.Tuples;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static reactor.core.publisher.Sinks.EmitFailureHandler.FAIL_FAST;
 
 /**
  * @author Stephane Maldini
@@ -207,10 +208,10 @@ public class MonoTests {
 
 	@Test
 	public void testMono() throws Exception {
-		MonoProcessor<String> promise = MonoProcessor.create();
-		promise.onNext("test");
+		Sinks.One<String> promise = Sinks.one();
+		promise.emitValue("test", FAIL_FAST);
 		final CountDownLatch successCountDownLatch = new CountDownLatch(1);
-		promise.subscribe(v -> successCountDownLatch.countDown());
+		promise.asMono().subscribe(v -> successCountDownLatch.countDown());
 		assertThat(successCountDownLatch.await(10, TimeUnit.SECONDS)).isTrue();
 	}
 
@@ -282,10 +283,10 @@ public class MonoTests {
 	@Test
 	public void monoCacheContextHistory() {
 		AtomicInteger contextFillCount = new AtomicInteger();
-		Mono<String> cached = Mono.subscriberContext()
+		Mono<String> cached = Mono.deferContextual(Mono::just)
 		                          .map(ctx -> ctx.getOrDefault("a", "BAD"))
 		                          .cache()
-		                          .subscriberContext(ctx -> ctx.put("a", "GOOD" + contextFillCount.incrementAndGet()));
+		                          .contextWrite(ctx -> ctx.put("a", "GOOD" + contextFillCount.incrementAndGet()));
 
 		//at first pass, the context is captured
 		String cacheMiss = cached.block();

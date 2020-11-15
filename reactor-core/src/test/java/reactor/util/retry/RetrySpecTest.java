@@ -22,7 +22,6 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
-
 import org.junit.jupiter.api.Test;
 import reactor.core.Exceptions;
 import reactor.core.publisher.Flux;
@@ -30,6 +29,7 @@ import reactor.core.publisher.FluxRetryWhenTest;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 import reactor.test.StepVerifierOptions;
+import reactor.util.context.Context;
 import reactor.util.retry.Retry.RetrySignal;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -49,7 +49,15 @@ public class RetrySpecTest {
 				.isNotSameAs(init.doAfterRetry(rs -> {}))
 				.isNotSameAs(init.doBeforeRetryAsync(rs -> Mono.empty()))
 				.isNotSameAs(init.doAfterRetryAsync(rs -> Mono.empty()))
-				.isNotSameAs(init.onRetryExhaustedThrow((b, rs) -> new IllegalStateException("boom")));
+				.isNotSameAs(init.onRetryExhaustedThrow((b, rs) -> new IllegalStateException("boom")))
+				.isNotSameAs(init.withRetryContext(Context.of("foo", "bar")));
+	}
+
+	@Test
+	public void retryContextIsCorrectlyPropagatedAndSet() {
+		RetrySpec init = Retry.max(1);
+		assertThat(init.withRetryContext(Context.of("foo", "bar")).maxAttempts(10))
+				.satisfies(rs -> rs.retryContext().get("foo").equals("bar"));
 	}
 
 	@Test

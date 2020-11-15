@@ -21,6 +21,7 @@ import java.util.function.LongConsumer;
 
 import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
+
 import reactor.core.CoreSubscriber;
 import reactor.core.Disposable;
 import reactor.util.context.Context;
@@ -34,14 +35,37 @@ import reactor.util.context.Context;
 public interface FluxSink<T> {
 
 	/**
-     * @see Subscriber#onComplete()
-     */
-    void complete();
+	 * Emit a non-null element, generating an {@link Subscriber#onNext(Object) onNext} signal.
+	 * <p>
+	 * Might throw an unchecked exception in case of a fatal error downstream which cannot
+	 * be propagated to any asynchronous handler (aka a bubbling exception).
+	 *
+	 * @param t the value to emit, not null
+	 * @return this sink for chaining further signals
+	 **/
+	FluxSink<T> next(T t);
+
+	/**
+	 * Terminate the sequence successfully, generating an {@link Subscriber#onComplete() onComplete}
+	 * signal.
+	 *
+	 * @see Subscriber#onComplete()
+	 */
+	void complete();
+
+	/**
+	 * Fail the sequence, generating an {@link Subscriber#onError(Throwable) onError}
+	 * signal.
+	 *
+	 * @param e the exception to signal, not null
+	 * @see Subscriber#onError(Throwable)
+	 */
+	void error(Throwable e);
 
 	/**
 	 * Return the current subscriber {@link Context}.
 	 * <p>
-	 *   {@link Context} can be enriched via {@link Flux#subscriberContext(Function)}
+	 *   {@link Context} can be enriched via {@link Flux#contextWrite(Function)}
 	 *   operator or directly by a child subscriber overriding
 	 *   {@link CoreSubscriber#currentContext()}
 	 *
@@ -49,18 +73,6 @@ public interface FluxSink<T> {
 	 */
 	Context currentContext();
 
-    /**
-     * @see Subscriber#onError(Throwable)
-     * @param e the exception to signal, not null
-     */
-    void error(Throwable e);
-
-    /**
-     * Try emitting, might throw an unchecked exception.
-     * @see Subscriber#onNext(Object)
-     * @param t the value to emit, not null
-     */
-    FluxSink<T> next(T t);
 
 	/**
 	 * The current outstanding request amount.

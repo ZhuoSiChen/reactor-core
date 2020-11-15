@@ -206,6 +206,7 @@ public class MonoSubscribeOnTest {
 		MonoSubscribeOn<String> test = new MonoSubscribeOn<>(Mono.empty(), Schedulers.immediate());
 
 		assertThat(test.scan(Scannable.Attr.RUN_ON)).isSameAs(Schedulers.immediate());
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.ASYNC);
 	}
 
 	@Test
@@ -225,6 +226,7 @@ public class MonoSubscribeOnTest {
 			assertThat(test.scan(Scannable.Attr.REQUESTED_FROM_DOWNSTREAM)).isEqualTo(3L);
 
 			assertThat(test.scan(Scannable.Attr.RUN_ON)).isSameAs(worker);
+			assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.ASYNC);
 			assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
 			assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(actual);
 

@@ -17,22 +17,13 @@
 package reactor.core.publisher;
 
 import org.junit.jupiter.api.Test;
+import reactor.core.Scannable;
 import reactor.test.StepVerifier;
 import reactor.test.subscriber.AssertSubscriber;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class MonoOnErrorResumeTest {
-/*
-	@Test
-	public void constructors() {
-		ConstructorTestBuilder ctb = new ConstructorTestBuilder(FluxOnErrorResume.class);
-		
-		ctb.addRef("source", Flux.never());
-		ctb.addRef("nextFactory", (Function<Throwable, Publisher<Object>>)e -> Flux.never());
-		
-		ctb.test();
-	}*/
 
 	@Test
 	public void normal() {
@@ -194,50 +185,30 @@ public class MonoOnErrorResumeTest {
 
 	@Test
 	public void mapError() {
-		MonoProcessor<Integer> mp = MonoProcessor.create();
 		StepVerifier.create(Mono.<Integer>error(new TestException())
-				.onErrorMap(TestException.class, e -> new Exception("test"))
-				.subscribeWith(mp))
-		            .then(() -> assertThat(mp.isError()).isTrue())
-		            .then(() -> assertThat(mp.isSuccess()).isFalse())
-		            .then(() -> assertThat(mp.isTerminated()).isTrue())
+				.onErrorMap(TestException.class, e -> new Exception("test")))
 		            .verifyErrorMessage("test");
 	}
 
 	@Test
 	public void otherwiseErrorFilter() {
-		MonoProcessor<Integer> mp = MonoProcessor.create();
 		StepVerifier.create(Mono.<Integer>error(new TestException())
-				.onErrorResume(TestException.class, e -> Mono.just(1))
-				.subscribeWith(mp))
-		            .then(() -> assertThat(mp.isError()).isFalse())
-		            .then(() -> assertThat(mp.isSuccess()).isTrue())
-		            .then(() -> assertThat(mp.isTerminated()).isTrue())
+				.onErrorResume(TestException.class, e -> Mono.just(1)))
 		            .expectNext(1)
 		            .verifyComplete();
 	}
 
 	@Test
 	public void otherwiseErrorUnfilter() {
-		MonoProcessor<Integer> mp = MonoProcessor.create();
 		StepVerifier.create(Mono.<Integer>error(new TestException())
-				.onErrorResume(RuntimeException.class, e -> Mono.just(1))
-				.subscribeWith(mp))
-		            .then(() -> assertThat(mp.isError()).isTrue())
-		            .then(() -> assertThat(mp.isSuccess()).isFalse())
-		            .then(() -> assertThat(mp.isTerminated()).isTrue())
+				.onErrorResume(RuntimeException.class, e -> Mono.just(1)))
 		            .verifyError(TestException.class);
 	}
 
 	@Test
 	public void otherwiseReturnErrorFilter() {
-		MonoProcessor<Integer> mp = MonoProcessor.create();
 		StepVerifier.create(Mono.<Integer>error(new TestException())
-				.onErrorReturn(TestException.class, 1)
-				.subscribeWith(mp))
-		            .then(() -> assertThat(mp.isError()).isFalse())
-		            .then(() -> assertThat(mp.isSuccess()).isTrue())
-		            .then(() -> assertThat(mp.isTerminated()).isTrue())
+				.onErrorReturn(TestException.class, 1))
 		            .expectNext(1)
 		            .verifyComplete();
 	}
@@ -245,38 +216,30 @@ public class MonoOnErrorResumeTest {
 
 	@Test
 	public void otherwiseReturnErrorFilter2() {
-		MonoProcessor<Integer> mp = MonoProcessor.create();
 		StepVerifier.create(Mono.<Integer>error(new TestException())
-				.onErrorReturn(TestException.class::isInstance, 1)
-				.subscribeWith(mp))
-		            .then(() -> assertThat(mp.isError()).isFalse())
-		            .then(() -> assertThat(mp.isSuccess()).isTrue())
-		            .then(() -> assertThat(mp.isTerminated()).isTrue())
+				.onErrorReturn(TestException.class::isInstance, 1))
 		            .expectNext(1)
 		            .verifyComplete();
 	}
 
 	@Test
 	public void otherwiseReturnErrorUnfilter() {
-		MonoProcessor<Integer> mp = MonoProcessor.create();
 		StepVerifier.create(Mono.<Integer>error(new TestException())
-				.onErrorReturn(RuntimeException.class, 1)
-				.subscribeWith(mp))
-		            .then(() -> assertThat(mp.isError()).isTrue())
-		            .then(() -> assertThat(mp.isSuccess()).isFalse())
-		            .then(() -> assertThat(mp.isTerminated()).isTrue())
+				.onErrorReturn(RuntimeException.class, 1))
 		            .verifyError(TestException.class);
 	}
 
 	@Test
 	public void otherwiseReturnErrorUnfilter2() {
-		MonoProcessor<Integer> mp = MonoProcessor.create();
 		StepVerifier.create(Mono.<Integer>error(new TestException())
-				.onErrorReturn(RuntimeException.class::isInstance, 1)
-				.subscribeWith(mp))
-		            .then(() -> assertThat(mp.isError()).isTrue())
-		            .then(() -> assertThat(mp.isSuccess()).isFalse())
-		            .then(() -> assertThat(mp.isTerminated()).isTrue())
+				.onErrorReturn(RuntimeException.class::isInstance, 1))
 		            .verifyError(TestException.class);
+	}
+
+	@Test
+	public void scanOperator(){
+	    MonoOnErrorResume<String> test = new MonoOnErrorResume<>(Mono.just("foo"), e -> Mono.just("bar"));
+
+	    assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 	}
 }

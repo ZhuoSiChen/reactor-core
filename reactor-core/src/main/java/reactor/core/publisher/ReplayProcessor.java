@@ -25,9 +25,11 @@ import java.util.stream.Stream;
 
 import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
+
 import reactor.core.CoreSubscriber;
 import reactor.core.Fuseable;
 import reactor.core.Scannable;
+import reactor.core.publisher.Sinks.EmitResult;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.annotation.Nullable;
@@ -45,9 +47,12 @@ import static reactor.core.publisher.FluxReplay.ReplaySubscriber.TERMINATED;
  * <p>
  *
  * @param <T> the value type
+ * @deprecated To be removed in 3.5, prefer clear cut usage of {@link Sinks} through
+ * variations under {@link reactor.core.publisher.Sinks.MulticastReplaySpec Sinks.many().replay()}.
  */
+@Deprecated
 public final class ReplayProcessor<T> extends FluxProcessor<T, T>
-		implements Fuseable {
+		implements Fuseable, InternalManySink<T> {
 
 	/**
 	 * Create a {@link ReplayProcessor} that caches the last element it has pushed,
@@ -431,50 +436,85 @@ public final class ReplayProcessor<T> extends FluxProcessor<T, T>
 	}
 
 	@Override
-	public void onNext(T t) {
-		FluxReplay.ReplayBuffer<T> b = buffer;
-		if (b.isDone()) {
-			Operators.onNextDropped(t, currentContext());
-		}
-		else {
-			b.add(t);
-			for (FluxReplay.ReplaySubscription<T> rs : subscribers) {
-				b.replay(rs);
-			}
-		}
-	}
-
-	@Override
-	public void onError(Throwable t) {
-		FluxReplay.ReplayBuffer<T> b = buffer;
-		if (b.isDone()) {
-			Operators.onErrorDroppedMulticast(t);
-		}
-		else {
-			b.onError(t);
-
-			@SuppressWarnings("unchecked") FluxReplay.ReplaySubscription<T>[] a =
-					SUBSCRIBERS.getAndSet(this, TERMINATED);
-
-			for (FluxReplay.ReplaySubscription<T> rs : a) {
-				b.replay(rs);
-			}
-		}
-	}
-
-	@Override
 	public void onComplete() {
-		FluxReplay.ReplayBuffer<T> b = buffer;
-		if (!b.isDone()) {
-			b.onComplete();
+		//no particular error condition handling for onComplete
+		@SuppressWarnings("unused") Sinks.EmitResult emitResult = tryEmitComplete();
+	}
 
-			@SuppressWarnings("unchecked") FluxReplay.ReplaySubscription<T>[] a =
+	@Override
+	public Sinks.EmitResult tryEmitComplete() {
+		FluxReplay.ReplayBuffer<T> b = buffer;
+		if (b.isDone()) {
+			return Sinks.EmitResult.FAIL_TERMINATED;
+		}
+
+		b.onComplete();
+
+		@SuppressWarnings("unchecked") FluxReplay.ReplaySubscription<T>[] a =
+				SUBSCRIBERS.getAndSet(this, TERMINATED);
+
+		for (FluxReplay.ReplaySubscription<T> rs : a) {
+			b.replay(rs);
+		}
+		return EmitResult.OK;
+	}
+
+	@Override
+	public void onError(Throwable throwable) {
+		emitError(throwable, Sinks.EmitFailureHandler.FAIL_FAST);
+	}
+
+	@Override
+	public EmitResult tryEmitError(Throwable t) {
+		FluxReplay.ReplayBuffer<T> b = buffer;
+		if (b.isDone()) {
+			return EmitResult.FAIL_TERMINATED;
+		}
+
+		b.onError(t);
+
+		@SuppressWarnings("unchecked") FluxReplay.ReplaySubscription<T>[] a =
 					SUBSCRIBERS.getAndSet(this, TERMINATED);
 
-			for (FluxReplay.ReplaySubscription<T> rs : a) {
-				b.replay(rs);
-			}
+		for (FluxReplay.ReplaySubscription<T> rs : a) {
+			b.replay(rs);
 		}
+		return EmitResult.OK;
+	}
+
+	@Override
+	public void onNext(T t) {
+		emitNext(t, Sinks.EmitFailureHandler.FAIL_FAST);
+	}
+
+	@Override
+	public Sinks.EmitResult tryEmitNext(T t) {
+		FluxReplay.ReplayBuffer<T> b = buffer;
+		if (b.isDone()) {
+			return Sinks.EmitResult.FAIL_TERMINATED;
+		}
+
+		//note: ReplayProcessor can so far ALWAYS buffer the element, no FAIL_ZERO_SUBSCRIBER here
+		b.add(t);
+		for (FluxReplay.ReplaySubscription<T> rs : subscribers) {
+			b.replay(rs);
+		}
+		return Sinks.EmitResult.OK;
+	}
+
+	@Override
+	public int currentSubscriberCount() {
+		return subscribers.length;
+	}
+
+	@Override
+	public Flux<T> asFlux() {
+		return this;
+	}
+
+	@Override
+	protected boolean isIdentityProcessor() {
+		return true;
 	}
 
 	static final class ReplayInner<T>

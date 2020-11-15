@@ -32,6 +32,7 @@ import java.util.stream.Stream;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
+
 import reactor.core.CoreSubscriber;
 import reactor.core.Disposable;
 import reactor.core.Disposables;
@@ -108,6 +109,12 @@ final class FluxGroupJoin<TLeft, TRight, TLeftEnd, TRightEnd, R>
 		return null;
 	}
 
+	@Override
+	public Object scanUnsafe(Attr key) {
+		if (key == Attr.RUN_STYLE) return Attr.RunStyle.SYNC;
+		return super.scanUnsafe(key);
+	}
+
 	interface JoinSupport<T> extends InnerProducer<T> {
 
 		void innerError(Throwable ex);
@@ -129,7 +136,7 @@ final class FluxGroupJoin<TLeft, TRight, TLeftEnd, TRightEnd, R>
 
 		final Disposable.Composite cancellations;
 
-		final Map<Integer, UnicastProcessor<TRight>> lefts;
+		final Map<Integer, Sinks.Many<TRight>> lefts;
 
 		final Map<Integer, TRight> rights;
 
@@ -206,7 +213,7 @@ final class FluxGroupJoin<TLeft, TRight, TLeftEnd, TRightEnd, R>
 		@Override
 		public Stream<? extends Scannable> inners() {
 			return Stream.concat(
-					lefts.values().stream(),
+					lefts.values().stream().map(Scannable::from),
 					Scannable.from(cancellations).inners()
 			);
 		}
@@ -244,8 +251,8 @@ final class FluxGroupJoin<TLeft, TRight, TLeftEnd, TRightEnd, R>
 		void errorAll(Subscriber<?> a) {
 			Throwable ex = Exceptions.terminate(ERROR, this);
 
-			for (UnicastProcessor<TRight> up : lefts.values()) {
-				up.onError(ex);
+			for (Sinks.Many<TRight> up : lefts.values()) {
+				up.emitError(ex, Sinks.EmitFailureHandler.FAIL_FAST);
 			}
 
 			lefts.clear();
@@ -285,8 +292,8 @@ final class FluxGroupJoin<TLeft, TRight, TLeftEnd, TRightEnd, R>
 					boolean empty = mode == null;
 
 					if (d && empty) {
-						for (UnicastProcessor<?> up : lefts.values()) {
-							up.onComplete();
+						for (Sinks.Many<?> up : lefts.values()) {
+							up.emitComplete(Sinks.EmitFailureHandler.FAIL_FAST);
 						}
 
 						lefts.clear();
@@ -306,8 +313,7 @@ final class FluxGroupJoin<TLeft, TRight, TLeftEnd, TRightEnd, R>
 					if (mode == LEFT_VALUE) {
 						@SuppressWarnings("unchecked") TLeft left = (TLeft) val;
 
-						UnicastProcessor<TRight> up =
-								new UnicastProcessor<>(processorQueueSupplier.get());
+						Sinks.Many<TRight> up = Sinks.unsafe().many().unicast().onBackpressureBuffer(processorQueueSupplier.get());
 						int idx = leftIndex++;
 						lefts.put(idx, up);
 
@@ -343,7 +349,7 @@ final class FluxGroupJoin<TLeft, TRight, TLeftEnd, TRightEnd, R>
 						R w;
 
 						try {
-							w = Objects.requireNonNull(resultSelector.apply(left, up),
+							w = Objects.requireNonNull(resultSelector.apply(left, up.asFlux()),
 									"The resultSelector returned a null value");
 						}
 						catch (Throwable exc) {
@@ -369,7 +375,7 @@ final class FluxGroupJoin<TLeft, TRight, TLeftEnd, TRightEnd, R>
 						}
 
 						for (TRight right : rights.values()) {
-							up.onNext(right);
+							up.emitNext(right, Sinks.EmitFailureHandler.FAIL_FAST);
 						}
 					}
 					else if (mode == RIGHT_VALUE) {
@@ -408,17 +414,17 @@ final class FluxGroupJoin<TLeft, TRight, TLeftEnd, TRightEnd, R>
 							return;
 						}
 
-						for (UnicastProcessor<TRight> up : lefts.values()) {
-							up.onNext(right);
+						for (Sinks.Many<TRight> up : lefts.values()) {
+							up.emitNext(right, Sinks.EmitFailureHandler.FAIL_FAST);
 						}
 					}
 					else if (mode == LEFT_CLOSE) {
 						LeftRightEndSubscriber end = (LeftRightEndSubscriber) val;
 
-						UnicastProcessor<TRight> up = lefts.remove(end.index);
+						Sinks.Many<TRight> up = lefts.remove(end.index);
 						cancellations.remove(end);
 						if (up != null) {
-							up.onComplete();
+							up.emitComplete(Sinks.EmitFailureHandler.FAIL_FAST);
 						}
 					}
 					else if (mode == RIGHT_CLOSE) {
@@ -513,6 +519,7 @@ final class FluxGroupJoin<TLeft, TRight, TLeftEnd, TRightEnd, R>
 			if (key == Attr.PARENT) return subscription;
 			if (key == Attr.ACTUAL ) return parent;
 			if (key == Attr.CANCELLED) return isDisposed();
+			if (key == Attr.RUN_STYLE) return Attr.RunStyle.SYNC;
 
 			return null;
 		}
@@ -579,6 +586,7 @@ final class FluxGroupJoin<TLeft, TRight, TLeftEnd, TRightEnd, R>
 		public Object scanUnsafe(Attr key) {
 			if (key == Attr.PARENT) return subscription;
 			if (key == Attr.CANCELLED) return isDisposed();
+			if (key == Attr.RUN_STYLE) return Attr.RunStyle.SYNC;
 
 			return null;
 		}

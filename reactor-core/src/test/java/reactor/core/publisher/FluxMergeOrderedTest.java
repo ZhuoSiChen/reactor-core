@@ -299,6 +299,7 @@ public class FluxMergeOrderedTest {
 
 		//default value
 		assertThat(fmo.scan(Scannable.Attr.BUFFERED)).isEqualTo(0);
+		assertThat(fmo.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 	}
 
 	@Test
@@ -312,6 +313,7 @@ public class FluxMergeOrderedTest {
 				.isSameAs(actual)
 				.isSameAs(test.actual());
 		assertThat(test.scan(Scannable.Attr.DELAY_ERROR)).isTrue();
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 
 		test.emitted = 2;
 		test.requested = 10;
@@ -344,6 +346,7 @@ public class FluxMergeOrderedTest {
 		assertThat(test.actual()).isSameAs(actual);
 		assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(sub);
 		assertThat(test.scan(Scannable.Attr.PREFETCH)).isEqualTo(123);
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 
 		assertThat(test.scan(Scannable.Attr.TERMINATED)).isFalse();
 		test.done = true;

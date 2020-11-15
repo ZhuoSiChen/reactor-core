@@ -16,18 +16,16 @@
 
 package reactor.core.publisher;
 
-import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import io.micrometer.core.instrument.Clock;
 import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.core.instrument.Metrics;
-import io.micrometer.core.instrument.Tag;
 import io.micrometer.core.instrument.Tags;
 import io.micrometer.core.instrument.Timer;
 import org.reactivestreams.Subscription;
 import reactor.core.CoreSubscriber;
 import reactor.core.Fuseable;
+import reactor.util.Metrics;
 import reactor.util.annotation.Nullable;
 
 import static reactor.core.publisher.FluxMetrics.*;
@@ -48,31 +46,22 @@ final class FluxMetricsFuseable<T> extends InternalFluxOperator<T, T> implements
 	final MeterRegistry registryCandidate;
 
 	FluxMetricsFuseable(Flux<? extends T> flux) {
-		this(flux, null);
-	}
-
-	/**
-	 * For testing purposes.
-	 *
-	 * @param candidate the registry to use, as a plain {@link Object} to avoid leaking dependency
-	 */
-	FluxMetricsFuseable(Flux<? extends T> flux, @Nullable MeterRegistry candidate) {
 		super(flux);
 
 		this.name = resolveName(flux);
-		this.tags = resolveTags(flux, FluxMetrics.DEFAULT_TAGS_FLUX, this.name);
-
-		if (candidate == null) {
-			this.registryCandidate = Metrics.globalRegistry;
-		}
-		else {
-			this.registryCandidate = candidate;
-		}
+		this.tags = resolveTags(flux, FluxMetrics.DEFAULT_TAGS_FLUX);
+		this.registryCandidate = Metrics.MicrometerConfiguration.getRegistry();
 	}
 
 	@Override
 	public CoreSubscriber<? super T> subscribeOrReturn(CoreSubscriber<? super T> actual) {
 		return new MetricsFuseableSubscriber<>(actual, registryCandidate, Clock.SYSTEM, this.name, this.tags);
+	}
+
+	@Override
+	public Object scanUnsafe(Attr key) {
+		if (key == Attr.RUN_STYLE) return Attr.RunStyle.SYNC;
+		return super.scanUnsafe(key);
 	}
 
 	/**
@@ -118,7 +107,7 @@ final class FluxMetricsFuseable<T> extends InternalFluxOperator<T, T> implements
 			}
 
 			if (done) {
-				recordMalformed(commonTags, registry);
+				recordMalformed(sequenceName, commonTags, registry);
 				Operators.onNextDropped(t, actual.currentContext());
 				return;
 			}
@@ -141,7 +130,11 @@ final class FluxMetricsFuseable<T> extends InternalFluxOperator<T, T> implements
 				T v = qs.poll();
 
 				if (v == null && mode == SYNC) {
-					recordOnComplete(commonTags, registry, subscribeToTerminateSample);
+					if (this.onNextIntervalTimer.count() == 0) {
+						recordOnCompleteEmpty(sequenceName, commonTags, registry, subscribeToTerminateSample);
+					} else {
+						recordOnComplete(sequenceName, commonTags, registry, subscribeToTerminateSample);
+					}
 				}
 				if (v != null) {
 					//this is an onNext event
@@ -153,7 +146,7 @@ final class FluxMetricsFuseable<T> extends InternalFluxOperator<T, T> implements
 				return v;
 			}
 			catch (Throwable e) {
-				recordOnError(commonTags, registry, subscribeToTerminateSample, e);
+				recordOnError(sequenceName, commonTags, registry, subscribeToTerminateSample, e);
 				throw e;
 			}
 		}
@@ -161,7 +154,7 @@ final class FluxMetricsFuseable<T> extends InternalFluxOperator<T, T> implements
 		@Override
 		public void onSubscribe(Subscription s) {
 			if (Operators.validate(this.s, s)) {
-				recordOnSubscribe(commonTags, registry);
+				recordOnSubscribe(sequenceName, commonTags, registry);
 				this.subscribeToTerminateSample = Timer.start(clock);
 				this.lastNextEventNanos = clock.monotonicTime();
 				this.qs = Operators.as(s);

@@ -26,11 +26,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import reactor.core.Exceptions;
+import reactor.core.Scannable;
 import reactor.test.StepVerifier;
 
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.*;
 import static reactor.core.Fuseable.SYNC;
 
 /**
@@ -205,4 +205,17 @@ public class MonoDoFinallyTest implements Consumer<SignalType> {
 		          .containsExactly("SECOND", "FIRST");
 	}
 
+	@Test
+	public void scanOperator(){
+		MonoDoFinally<String> test = new MonoDoFinally<>(Mono.just("foo"), this);
+
+		Assertions.assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
+	}
+
+	@Test
+	public void scanFuseableOperator(){
+		MonoDoFinallyFuseable<String> test = new MonoDoFinallyFuseable<>(Mono.just("foo"), this);
+
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
+	}
 }

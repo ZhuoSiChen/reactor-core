@@ -24,6 +24,7 @@ import org.reactivestreams.Subscription;
 
 import reactor.core.Scannable;
 import reactor.util.context.Context;
+import reactor.util.context.ContextView;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
@@ -32,10 +33,10 @@ public class LambdaSubscriberTest {
 
 	@Test
 	public void initialContextIsVisibleToUpstream() {
-		AtomicReference<Context> contextRef = new AtomicReference<>();
+		AtomicReference<ContextView> contextRef = new AtomicReference<>();
 
 		Flux.just("foo")
-		    .flatMap(c -> Mono.subscriberContext())
+		    .flatMap(c -> Mono.deferContextual(Mono::just))
 		    .doOnNext(contextRef::set)
 		    .subscribe(null, null, null, Context.of("subscriber", "context"));
 
@@ -197,6 +198,7 @@ public class LambdaSubscriberTest {
 
 		assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
 		assertThat(test.scan(Scannable.Attr.PREFETCH)).isEqualTo(Integer.MAX_VALUE);
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 
 		assertThat(test.scan(Scannable.Attr.TERMINATED)).isFalse();
 		assertThat(test.scan(Scannable.Attr.CANCELLED)).isFalse();

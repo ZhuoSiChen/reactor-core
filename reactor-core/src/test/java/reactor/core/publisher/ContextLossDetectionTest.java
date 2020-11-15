@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 
 import org.junit.jupiter.api.AfterAll;
@@ -30,39 +31,66 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
+
 import reactor.core.CorePublisher;
 import reactor.core.CoreSubscriber;
+import reactor.util.annotation.Nullable;
 import reactor.util.context.Context;
+import reactor.util.context.ContextView;
 
-import static org.assertj.core.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 
 public class ContextLossDetectionTest {
 
-	public static List<SourceFactory> sources() {
+	public static List<ContextTestCase> sources() {
 		return Arrays.asList(
-				new SourceFactory("Flux#transform") {
+				new ContextTestCase("Flux#transform") {
 					@Override
-					public CorePublisher<Context> apply(Function<CorePublisher<Context>, Publisher<Context>> f) {
-						return Flux.deferWithContext(Flux::just).transform(f);
+					public CorePublisher<ContextView> apply(LossyTransformer f) {
+						return Flux.deferContextual(Flux::just).transform(f);
 					}
 				},
-				new SourceFactory("Flux#transformDeferreed") {
+				new ContextTestCase("Flux#transformDeferred") {
 					@Override
-					public CorePublisher<Context> apply(Function<CorePublisher<Context>, Publisher<Context>> f) {
-						return Flux.deferWithContext(Flux::just).transformDeferred(f);
+					public CorePublisher<ContextView> apply(LossyTransformer f) {
+						return Flux.deferContextual(Flux::just).transformDeferred(f);
+					}
+				},
+				new ContextTestCase("Flux#transformDeferredContextual") {
+					@Override
+					public CorePublisher<ContextView> apply(LossyTransformer f) {
+						return Flux.deferContextual(Flux::just).transformDeferredContextual(f.adaptToBiFunction());
+					}
+				},
+				new ContextTestCase("Flux#transformDeferredContextual direct") {
+					@Override
+					public CorePublisher<ContextView> apply(LossyTransformer f) {
+						return Flux.<ContextView>empty().transformDeferredContextual(f.adaptToBiFunction());
 					}
 				},
 
-				new SourceFactory("Mono#transform") {
+				new ContextTestCase("Mono#transform") {
 					@Override
-					public CorePublisher<Context> apply(Function<CorePublisher<Context>, Publisher<Context>> f) {
-						return Mono.subscriberContext().transform(f);
+					public CorePublisher<ContextView> apply(LossyTransformer f) {
+						return Mono.deferContextual(Mono::just).transform(f);
 					}
 				},
-				new SourceFactory("Mono#transformDeferred") {
+				new ContextTestCase("Mono#transformDeferred") {
 					@Override
-					public CorePublisher<Context> apply(Function<CorePublisher<Context>, Publisher<Context>> f) {
-						return Mono.subscriberContext().transformDeferred(f);
+					public CorePublisher<ContextView> apply(LossyTransformer f) {
+						return Mono.deferContextual(Mono::just).transformDeferred(f);
+					}
+				},
+				new ContextTestCase("Mono#transformDeferredContextual") {
+					@Override
+					public CorePublisher<ContextView> apply(LossyTransformer f) {
+						return Mono.deferContextual(Mono::just).transformDeferredContextual(f.adaptToBiFunction());
+					}
+				},
+				new ContextTestCase("Mono#transformDeferredContextual direct") {
+					@Override
+					public CorePublisher<ContextView> apply(LossyTransformer f) {
+						return Mono.<ContextView>empty().transformDeferredContextual(f.adaptToBiFunction());
 					}
 				}
 		);
@@ -80,88 +108,54 @@ public class ContextLossDetectionTest {
 
 	@ParameterizedTest
 	@MethodSource("sources")
-	public void transformDeferredDetectsContextLoss(
-			Function<Function<CorePublisher<Context>, Publisher<Context>>, CorePublisher<Context>> fn
-	) {
-		Function<CorePublisher<Context>, Publisher<Context>> lifter = source -> {
-			return actual -> source.subscribe(new ForwardingCoreSubscriber<Context>(actual) {
-				@Override
-				public Context currentContext() {
-					return Context.of("foo", "baz");
-				}
-			});
-		};
+	public void transformDeferredDetectsContextLoss(ContextTestCase fn) {
+		LossyTransformer transformer = new LossyTransformer(fn + "'s badTransformer",
+				Context.of("foo", "baz"));
 
 		assertThatIllegalStateException()
-				.isThrownBy(() -> {
-					Flux.from(fn.apply(lifter))
-					    .subscriberContext(Context.of("foo", "bar"))
-					    .blockLast();
-				})
-				.withMessageStartingWith("Context loss after applying reactor.core.publisher.ContextLossDetectionTest$$Lambda$");
+				.isThrownBy(() -> fn.assembleWithDownstreamContext(transformer, Context.of("foo", "bar"))
+				                    .blockLast())
+				.withMessage("Context loss after applying " + fn + "'s badTransformer");
 	}
 
 	@ParameterizedTest
 	@MethodSource("sources")
-	public void transformDeferredDetectsContextLossWithEmptyContext(
-			Function<Function<CorePublisher<Context>, Publisher<Context>>, CorePublisher<Context>> fn
-	) {
-		Function<CorePublisher<Context>, Publisher<Context>> lifter = source -> {
-			return actual -> source.subscribe(new ForwardingCoreSubscriber<Context>(actual) {
-				@Override
-				public Context currentContext() {
-					return Context.empty();
-				}
-			});
-		};
+	public void transformDeferredDetectsContextLossWithEmptyContext(ContextTestCase fn) {
+		LossyTransformer transformer = new LossyTransformer(fn + "'s badTransformer",
+				Context.empty());
 
 		assertThatIllegalStateException()
-				.isThrownBy(() -> {
-					Flux.from(fn.apply(lifter))
-					    .subscriberContext(Context.of("foo", "bar"))
-					    .blockLast();
-				})
-				.withMessageStartingWith("Context loss after applying reactor.core.publisher.ContextLossDetectionTest$$Lambda$");
+				.isThrownBy(() -> fn.assembleWithDownstreamContext(transformer, Context.of("foo", "bar"))
+				                    .blockLast())
+				.withMessage("Context loss after applying " + fn + "'s badTransformer");
 	}
 
 	@ParameterizedTest
 	@MethodSource("sources")
-	public void transformDeferredDetectsContextLossWithDefaultContext(
-			Function<Function<CorePublisher<Context>, Publisher<Context>>, CorePublisher<Context>> fn
-	) {
-		Function<CorePublisher<Context>, Publisher<Context>> lifter = source -> {
-			return actual -> source.subscribe(new ForwardingCoreSubscriber<>(actual));
-		};
+	public void transformDeferredDetectsContextLossWithDefaultContext(ContextTestCase fn) {
+		LossyTransformer transformer = new LossyTransformer(fn + "'s badTransformer", true);
 
 		assertThatIllegalStateException()
-				.isThrownBy(() -> {
-					Flux.from(fn.apply(lifter))
-					    .subscriberContext(Context.of("foo", "bar"))
-					    .blockLast();
-				})
-				.withMessageStartingWith("Context loss after applying reactor.core.publisher.ContextLossDetectionTest$$Lambda$");
+				.isThrownBy(() -> fn.assembleWithDownstreamContext(transformer, Context.of("foo", "bar"))
+						.blockLast())
+				.withMessage("Context loss after applying " + fn + "'s badTransformer");
 	}
 
 	@ParameterizedTest
 	@MethodSource("sources")
-	public void transformDeferredDetectsContextLossWithRSSubscriber(
-			Function<Function<CorePublisher<Context>, Publisher<Context>>, CorePublisher<Context>> fn
-	) {
-		Function<CorePublisher<Context>, Publisher<Context>> lifter = source -> {
-			return actual -> source.subscribe(new ForwardingCoreSubscriber<>(actual));
-		};
+	public void transformDeferredDetectsContextLossWithRSSubscriber(ContextTestCase fn) {
+		LossyTransformer transformer = new LossyTransformer(fn + "'s badTransformer", false);
 
 		assertThatIllegalStateException()
 				.isThrownBy(() -> {
-					FutureSubscriber<Context> subscriber = new FutureSubscriber<Context>() {
+					FutureSubscriber<ContextView> subscriber = new FutureSubscriber<ContextView>() {
 						@Override
 						public void onSubscribe(Subscription subscription) {
 							subscription.cancel();
 						}
 					};
-					Flux.from(fn.apply(lifter))
-					    .subscriberContext(Context.of("foo", "bar"))
-					    .subscribe(subscriber);
+					fn.assembleWithDownstreamContext(transformer, Context.of("foo", "bar"))
+							.subscribe(subscriber);
 
 					try {
 						subscriber.get(1, TimeUnit.SECONDS);
@@ -170,15 +164,77 @@ public class ContextLossDetectionTest {
 						throw e.getCause();
 					}
 				})
-				.withMessageStartingWith("Context loss after applying reactor.core.publisher.ContextLossDetectionTest$$Lambda$");
+				.withMessage("Context loss after applying " + fn + "'s badTransformer");
 	}
 
-	static abstract class SourceFactory implements Function<Function<CorePublisher<Context>, Publisher<Context>>, CorePublisher<Context>> {
+	static class LossyTransformer implements Function<CorePublisher<ContextView>, Publisher<ContextView>> {
+
+		final String description;
+		final boolean useCoreSubscriber;
+		@Nullable
+		final Context contextOfSubscriber;
+
+		protected LossyTransformer(String description, Context contextOfSubscriber) {
+			this.description = description;
+			this.useCoreSubscriber = true;
+			this.contextOfSubscriber = contextOfSubscriber;
+		}
+
+		LossyTransformer(String description, boolean useCoreSubscriber) {
+			this.description = description;
+			this.useCoreSubscriber = useCoreSubscriber;
+			this.contextOfSubscriber = null;
+		}
+
+		LossyBiTransformer adaptToBiFunction() {
+			return new LossyBiTransformer(this);
+		}
+
+		@Override
+		public Publisher<ContextView> apply(CorePublisher<ContextView> publisher) {
+			if (contextOfSubscriber == null) {
+				return new ContextLossyPublisher<>(publisher, useCoreSubscriber);
+			}
+			return new ContextLossyPublisher<>(publisher, contextOfSubscriber);
+		}
+
+		@Override
+		public String toString() {
+			return description;
+		}
+	}
+
+	static class LossyBiTransformer implements BiFunction<CorePublisher<ContextView>, ContextView, Publisher<ContextView>> {
+
+		final LossyTransformer delegate;
+
+		protected LossyBiTransformer(LossyTransformer delegate) {
+			this.delegate = delegate;
+		}
+
+		@Override
+		public Publisher<ContextView> apply(CorePublisher<ContextView> publisher, ContextView contextView) {
+			return delegate.apply(publisher);
+		}
+
+		@Override
+		public String toString() {
+			return delegate.toString();
+		}
+	}
+
+	static abstract class ContextTestCase implements Function<LossyTransformer, CorePublisher<ContextView>> {
 
 		final String name;
 
-		SourceFactory(String name) {
+		ContextTestCase(String name) {
 			this.name = name;
+		}
+
+		Flux<ContextView> assembleWithDownstreamContext(LossyTransformer lossyTransformer,
+				Context downstreamContext) {
+			return Flux.from(apply(lossyTransformer))
+			           .contextWrite(downstreamContext);
 		}
 
 		@Override
@@ -187,39 +243,93 @@ public class ContextLossDetectionTest {
 		}
 	}
 
-	static class ForwardingSubscriber<T> implements Subscriber<T> {
+	static class ContextLossyPublisher<T> implements Publisher<T> {
 
-		final Subscriber<? super T> actual;
+		final Publisher<T> source;
+		@Nullable
+		final Context      lossyContext;
+		final boolean      useCoreSubscriber;
 
-		ForwardingSubscriber(Subscriber<? super T> actual) {
-			this.actual = actual;
+		ContextLossyPublisher(Publisher<T> source, Context lossyContext) {
+			this.source = source;
+			this.lossyContext = lossyContext;
+			this.useCoreSubscriber = false;
+		}
+
+		ContextLossyPublisher(Publisher<T> source, boolean useCoreSubscriber) {
+			this.source = source;
+			this.lossyContext = null;
+			this.useCoreSubscriber = useCoreSubscriber;
 		}
 
 		@Override
-		public void onComplete() {
-			actual.onComplete();
+		public void subscribe(Subscriber<? super T> subscriber) {
+			if (lossyContext == null && !useCoreSubscriber) {
+				source.subscribe(new ForeignOperator<>(subscriber));
+			}
+			else {
+				source.subscribe(new CoreLossyOperator<>(subscriber, lossyContext));
+			}
 		}
 
-		@Override
-		public void onError(Throwable throwable) {
-			actual.onError(throwable);
+		static class ForeignOperator<T> implements Subscriber<T>, Subscription {
+
+			private final Subscriber<? super T> downstream;
+			private Subscription upstream;
+
+			ForeignOperator(Subscriber<? super T> subscriber) {
+				this.downstream = subscriber;
+			}
+
+			@Override
+			public void onSubscribe(Subscription subscription) {
+				this.upstream = subscription;
+				this.downstream.onSubscribe(this);
+			}
+
+			@Override
+			public void request(long l) {
+				this.upstream.request(l);
+			}
+
+			@Override
+			public void cancel() {
+				this.upstream.cancel();
+			}
+
+			@Override
+			public void onNext(T t) {
+				this.downstream.onNext(t);
+			}
+
+			@Override
+			public void onComplete() {
+				this.downstream.onComplete();
+			}
+
+			@Override
+			public void onError(Throwable throwable) {
+				this.downstream.onError(throwable);
+			}
 		}
 
-		@Override
-		public void onNext(T context) {
-			actual.onNext(context);
-		}
+		static class CoreLossyOperator<T> extends ForeignOperator<T> implements CoreSubscriber<T> {
 
-		@Override
-		public void onSubscribe(Subscription subscription) {
-			actual.onSubscribe(subscription);
-		}
-	}
+			@Nullable
+			private final Context lossyContext;
 
-	static class ForwardingCoreSubscriber<T> extends ForwardingSubscriber<T> implements CoreSubscriber<T> {
+			CoreLossyOperator(Subscriber<? super T> subscriber, @Nullable Context lossyContext) {
+				super(subscriber);
+				this.lossyContext = lossyContext;
+			}
 
-		ForwardingCoreSubscriber(Subscriber<? super T> actual) {
-			super(actual);
+			@Override
+			public Context currentContext() {
+				if (this.lossyContext == null) {
+					return CoreSubscriber.super.currentContext();
+				}
+				return this.lossyContext;
+			}
 		}
 	}
 

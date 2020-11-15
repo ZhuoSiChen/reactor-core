@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
+
 import reactor.core.CoreSubscriber;
 import reactor.core.Scannable;
 
@@ -71,9 +72,9 @@ public class StrictSubscriberTest {
 		AtomicBoolean state2 = new AtomicBoolean();
 		AtomicReference<Throwable> e = new AtomicReference<>();
 
-		DirectProcessor<Integer> sp = DirectProcessor.create();
+		Sinks.Many<Integer> sp = Sinks.unsafe().many().multicast().directBestEffort();
 
-		sp.doOnCancel(() -> state2.set(state1.get()))
+		sp.asFlux().doOnCancel(() -> state2.set(state1.get()))
 		  .subscribe(new Subscriber<Integer>() {
 			  @Override
 			  public void onSubscribe(Subscription s) {
@@ -99,7 +100,7 @@ public class StrictSubscriberTest {
 		assertThat(e).hasValue(null);
 
 		assertThat(state2.get()).as("Cancel executed before onSubscribe finished").isTrue();
-		assertThat(sp.hasDownstreams()).as("Has subscribers?!").isFalse();
+		assertThat(sp.currentSubscriberCount()).as("sp has subscriber").isZero();
 	}
 
 	@Test

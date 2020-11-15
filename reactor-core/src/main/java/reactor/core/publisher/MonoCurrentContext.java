@@ -24,6 +24,7 @@ import reactor.util.context.Context;
 /**
  * Materialize current {@link Context} from the subscribing flow
  */
+@Deprecated
 final class MonoCurrentContext extends Mono<Context>
 		implements Fuseable, Scannable {
 
@@ -37,6 +38,7 @@ final class MonoCurrentContext extends Mono<Context>
 
 	@Override
 	public Object scanUnsafe(Attr key) {
-		return null; //no particular key to be represented, still useful in hooks
+		if (key == Attr.RUN_STYLE) return Attr.RunStyle.SYNC;
+		return null;
 	}
 }

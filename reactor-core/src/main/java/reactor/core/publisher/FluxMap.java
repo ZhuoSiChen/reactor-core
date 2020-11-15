@@ -50,7 +50,7 @@ final class FluxMap<T, R> extends InternalFluxOperator<T, R> {
 		super(source);
 		this.mapper = Objects.requireNonNull(mapper, "mapper");
 	}
-
+	//订阅或返回？
 	@Override
 	@SuppressWarnings("unchecked")
 	public CoreSubscriber<? super T> subscribeOrReturn(CoreSubscriber<? super R> actual) {
@@ -59,7 +59,14 @@ final class FluxMap<T, R> extends InternalFluxOperator<T, R> {
 					(Fuseable.ConditionalSubscriber<? super R>) actual;
 			return new MapConditionalSubscriber<>(cs, mapper);
 		}
+		// actual 是源  mapper 是个 function 返回一个 operator
 		return new MapSubscriber<>(actual, mapper);
+	}
+
+	@Override
+	public Object scanUnsafe(Attr key) {
+		if (key == Attr.RUN_STYLE) return Attr.RunStyle.SYNC;
+		return super.scanUnsafe(key);
 	}
 
 	static final class MapSubscriber<T, R>
@@ -141,6 +148,7 @@ final class FluxMap<T, R> extends InternalFluxOperator<T, R> {
 		public Object scanUnsafe(Attr key) {
 			if (key == Attr.PARENT) return s;
 			if (key == Attr.TERMINATED) return done;
+			if (key == Attr.RUN_STYLE) return Attr.RunStyle.SYNC;
 
 			return InnerOperator.super.scanUnsafe(key);
 		}
@@ -267,6 +275,7 @@ final class FluxMap<T, R> extends InternalFluxOperator<T, R> {
 		public Object scanUnsafe(Attr key) {
 			if (key == Attr.PARENT) return s;
 			if (key == Attr.TERMINATED) return done;
+			if (key == Attr.RUN_STYLE) return Attr.RunStyle.SYNC;
 
 			return InnerOperator.super.scanUnsafe(key);
 		}

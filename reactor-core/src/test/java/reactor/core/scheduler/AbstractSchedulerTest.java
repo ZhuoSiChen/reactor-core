@@ -19,14 +19,17 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
+import org.assertj.core.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.extension.RegisterExtension;
+
 import reactor.core.Disposable;
 import reactor.core.Exceptions;
 import reactor.test.AutoDisposingExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.fail;
 
@@ -38,6 +41,9 @@ public abstract class AbstractSchedulerTest {
 	@RegisterExtension
 	public AutoDisposingExtension afterTest = new AutoDisposingExtension();
 
+	/**
+	 * @return the {@link Scheduler} to be tested, {@link Scheduler#start() started}
+	 */
 	protected abstract Scheduler scheduler();
 
 	protected boolean shouldCheckInterrupted(){
@@ -56,11 +62,39 @@ public abstract class AbstractSchedulerTest {
 
 	protected boolean shouldCheckWorkerTimeScheduling() { return true; }
 
+	protected boolean shouldCheckSupportRestart() { return true; }
+
 	protected Scheduler schedulerNotCached() {
 		Scheduler s = scheduler();
 		assertThat(s).as("common scheduler tests should not use a CachedScheduler")
 				.isNotInstanceOf(Schedulers.CachedScheduler.class);
 		return s;
+	}
+
+	@Test
+	public void restartSupport() {
+		boolean supportsRestart = shouldCheckSupportRestart();
+		Scheduler s = scheduler();
+		s.dispose();
+		s.start();
+
+		if (supportsRestart) {
+			assertThat(s.isDisposed()).as("restart supported").isFalse();
+		}
+		else {
+			assertThat(s.isDisposed()).as("restart not supported").isTrue();
+		}
+	}
+
+	@Test
+	public void acceptTaskAfterStartStopStart() {
+		Assumptions.assumeThat(shouldCheckSupportRestart()).as("scheduler supports restart").isTrue();
+
+		Scheduler scheduler = scheduler();
+		scheduler.dispose();
+
+		scheduler.start();
+		assertThatCode(() -> scheduler.schedule(() -> {})).doesNotThrowAnyException();
 	}
 
 	@Test

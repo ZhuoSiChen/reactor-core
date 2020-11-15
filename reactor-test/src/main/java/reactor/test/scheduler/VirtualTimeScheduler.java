@@ -68,15 +68,21 @@ public class VirtualTimeScheduler implements Scheduler {
 	 * {@link Schedulers} factories.
 	 */
 	public static VirtualTimeScheduler create(boolean defer) {
-		return new VirtualTimeScheduler(defer);
+		VirtualTimeScheduler instance = new VirtualTimeScheduler(defer);
+		instance.start();
+		return instance;
 	}
 
 	/**
 	 * Assign a newly created {@link VirtualTimeScheduler} to all {@link reactor.core.scheduler.Schedulers.Factory}
 	 * factories ONLY if no {@link VirtualTimeScheduler} is currently set. In case of scheduler creation,
 	 * there is no deferring of time operations (see {@link #create(boolean)}.
-	 * While the method is thread safe, its usually advised to execute such
-	 * wide-impact BEFORE all tested code runs (setup etc). The created scheduler is returned.
+	 * Note that prior to replacing the factories, a {@link Schedulers#setFactoryWithSnapshot(Schedulers.Factory) snapshot}
+	 * will be performed. Resetting the factory will restore said snapshot.
+	 * <p>
+	 * While this methods makes best effort to be thread safe, it is usually advised to
+	 * perform such wide-impact setup serially and BEFORE all test code runs
+	 * (setup/beforeAll/beforeClass...). The created Scheduler is returned.
 	 *
 	 * @return the VirtualTimeScheduler that was created and set through the factory
 	 */
@@ -88,8 +94,13 @@ public class VirtualTimeScheduler implements Scheduler {
 	 * Assign a newly created {@link VirtualTimeScheduler} to all {@link reactor.core.scheduler.Schedulers.Factory}
 	 * factories ONLY if no {@link VirtualTimeScheduler} is currently set. In case of scheduler creation,
 	 * there is opt-in deferring of time related operations (see {@link #create(boolean)}.
-	 * While the method is thread safe, its usually advised to execute such
-	 * wide-impact BEFORE all tested code runs (setup etc). The created scheduler is returned.
+	 * Note that prior to replacing the factories, a {@link Schedulers#setFactoryWithSnapshot(Schedulers.Factory) snapshot}
+	 * will be performed. Resetting the factory will restore said snapshot.
+	 * <p>
+	 * While this methods makes best effort to be thread safe, it is usually advised to
+	 * perform such wide-impact setup serially and BEFORE all test code runs
+	 * (setup/beforeAll/beforeClass...). The created Scheduler is returned.
+
 	 *
 	 * @param defer true to defer all clock move operations until there are tasks in queue, if a scheduler is created
 	 * @return the VirtualTimeScheduler that was created and set through the factory
@@ -105,9 +116,12 @@ public class VirtualTimeScheduler implements Scheduler {
 	 * {@link #create()} and {@link #create()}). Note that the returned scheduler
 	 * should always be captured and used going forward, as the provided scheduler can be
 	 * superseded by a matching scheduler that has already been enabled.
+	 * Note also that prior to replacing the factories, a {@link Schedulers#setFactoryWithSnapshot(Schedulers.Factory) snapshot}
+	 * will be performed. Resetting the factory will restore said snapshot.
 	 * <p>
-	 * While the method is thread safe, it's usually advised to execute such wide-impact
-	 * BEFORE all tested code runs (setup etc). The actual enabled Scheduler is returned.
+	 * While this methods makes best effort to be thread safe, it is usually advised to
+	 * perform such wide-impact setup serially and BEFORE all test code runs
+	 * (setup/beforeAll/beforeClass...). The actual enabled Scheduler is returned.
 	 *
 	 * @param scheduler the {@link VirtualTimeScheduler} to use in factories.
 	 * @return the enabled VirtualTimeScheduler (can be different from the provided one)
@@ -119,12 +133,14 @@ public class VirtualTimeScheduler implements Scheduler {
 	/**
 	 * Assign an externally created {@link VirtualTimeScheduler} to the relevant
 	 * {@link reactor.core.scheduler.Schedulers.Factory} factories, depending on how it was created (see
-	 * {@link #create()} and {@link #create()}). Contrary to
-	 * {@link #getOrSet(VirtualTimeScheduler)}, the provided scheduler is always used, even
-	 * if a matching scheduler is currently enabled.
+	 * {@link #create()} and {@link #create()}). Contrary to {@link #getOrSet(VirtualTimeScheduler)},
+	 * the provided scheduler is always used, even if a matching scheduler is currently enabled.
+	 * Note that prior to replacing the factories, a {@link Schedulers#setFactoryWithSnapshot(Schedulers.Factory) snapshot}
+	 * will be performed. Resetting the factory will restore said snapshot.
 	 * <p>
-	 * While the method is thread safe, it's usually advised to execute such wide-impact
-	 * BEFORE all tested code runs (setup etc).
+	 * While this methods makes best effort to be thread safe, it is usually advised to
+	 * perform such wide-impact setup serially and BEFORE all test code runs
+	 * (setup/beforeAll/beforeClass...).
 	 *
 	 * @param scheduler the {@link VirtualTimeScheduler} to use in factories.
 	 * @return the enabled VirtualTimeScheduler (same as provided), for chaining
@@ -163,11 +179,17 @@ public class VirtualTimeScheduler implements Scheduler {
 			}
 			VirtualTimeScheduler newS = schedulerSupplier.get();
 			if (newS == CURRENT.get()) {
-				return newS; //nothing to do, it has already been set in the past
+				return newS; //nothing to do, it has already been set and started in the past
 			}
 
 			if (CURRENT.compareAndSet(s, newS)) {
-				Schedulers.setFactory(new AllFactory(newS));
+				if (s != null) {
+					newS.schedulersSnapshot = s.schedulersSnapshot;
+					Schedulers.setFactory(new AllFactory(newS));
+				}
+				else {
+					newS.schedulersSnapshot = Schedulers.setFactoryWithSnapshot(new AllFactory(newS));
+				}
 				if (CURRENT.get() == newS) {
 					return newS;
 				}
@@ -198,14 +220,21 @@ public class VirtualTimeScheduler implements Scheduler {
 	}
 
 	/**
-	 * Re-assign the default Reactor Core {@link Schedulers} factories.
-	 * While the method is thread safe, its usually advised to execute such wide-impact
-	 * AFTER all tested code has been run (teardown etc).
+	 * Re-activate the global {@link Schedulers} and potentially customized
+	 * {@link reactor.core.scheduler.Schedulers.Factory} that were
+	 * active prior to last activation of {@link VirtualTimeScheduler} factories. (ie the
+	 * last {@link #set(VirtualTimeScheduler) set} or {@link #getOrSet() getOrSet}).
+	 * <p>
+	 * While this methods makes best effort to be thread safe, it is usually advised to
+	 * perform such wide-impact setup serially and AFTER all tested code has been run
+	 * (teardown/afterAll/afterClass...).
 	 */
 	public static void reset() {
 		VirtualTimeScheduler s = CURRENT.get();
 		if (s != null && CURRENT.compareAndSet(s, null)) {
-			Schedulers.resetFactory();
+			//note that resetFrom handles null, but it shouldn't happen unless very specific race
+			// with #set and parallel disposal of the set VTS, which doesn't make much sense
+			Schedulers.resetFrom(s.schedulersSnapshot);
 		}
 	}
 
@@ -229,6 +258,8 @@ public class VirtualTimeScheduler implements Scheduler {
 	final boolean defer;
 
 	final VirtualTimeWorker directWorker;
+
+	private Schedulers.Snapshot schedulersSnapshot;
 
 	protected VirtualTimeScheduler(boolean defer) {
 		this.defer = defer;
@@ -322,8 +353,8 @@ public class VirtualTimeScheduler implements Scheduler {
 		directWorker.dispose();
 		//TODO remove the below behavior?
 		VirtualTimeScheduler s = CURRENT.get();
-		if (s != null && s == this && CURRENT.compareAndSet(s, null)) {
-			Schedulers.resetFactory();
+		if (s == this && CURRENT.compareAndSet(s, null)) {
+			Schedulers.resetFrom(this.schedulersSnapshot);
 		}
 	}
 
@@ -418,6 +449,7 @@ public class VirtualTimeScheduler implements Scheduler {
 		}
 
 		@Override
+		@SuppressWarnings("deprecation")
 		public Scheduler newElastic(int ttlSeconds, ThreadFactory threadFactory) {
 			return s;
 		}

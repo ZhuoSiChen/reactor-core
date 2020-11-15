@@ -203,6 +203,14 @@ public class MonoDelayUntilTest {
 	}
 
 	@Test
+	public void scanOperator(){
+	    Mono<Integer> source = Mono.just(1);
+		MonoDelayUntil<Integer> test = new MonoDelayUntil<>(source, i -> Mono.just(1));
+
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
+	}
+
+	@Test
 	public void scanCoordinator() {
 		CoreSubscriber<String> actual = new LambdaMonoSubscriber<>(null, e -> {}, null, null);
 		@SuppressWarnings("unchecked")
@@ -214,6 +222,7 @@ public class MonoDelayUntilTest {
 		assertThat(test.scan(Scannable.Attr.PARENT)).isNull();
 		assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(actual);
 		assertThat(test.scan(Scannable.Attr.PREFETCH)).isEqualTo(Integer.MAX_VALUE);
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 
 		assertThat(test.scan(Scannable.Attr.TERMINATED)).isFalse();
 		test.done = 2;
@@ -241,6 +250,7 @@ public class MonoDelayUntilTest {
 
 		assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(subscription);
 		assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(main);
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 
 		assertThat(test.scan(Scannable.Attr.PREFETCH)).isEqualTo(Integer.MAX_VALUE);
 

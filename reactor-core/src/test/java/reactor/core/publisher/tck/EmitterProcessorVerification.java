@@ -19,8 +19,6 @@ import java.util.logging.Level;
 
 import org.reactivestreams.Processor;
 import org.testng.SkipException;
-import reactor.core.publisher.EmitterProcessor;
-import reactor.core.publisher.FluxProcessor;
 
 /**
  * @author Stephane Maldini
@@ -29,9 +27,10 @@ import reactor.core.publisher.FluxProcessor;
 public class EmitterProcessorVerification extends AbstractProcessorVerification {
 
 	@Override
+	@SuppressWarnings("deprecation")
 	public Processor<Long, Long> createIdentityProcessor(int bufferSize) {
-		FluxProcessor<Long, Long> p = EmitterProcessor.create(bufferSize);
-		return FluxProcessor.wrap(p, p.log("EmitterProcessorVerification", Level.FINE));
+		reactor.core.publisher.FluxProcessor<Long, Long> p = reactor.core.publisher.EmitterProcessor.create(bufferSize);
+		return reactor.core.publisher.FluxProcessor.wrap(p, p.log("EmitterProcessorVerification", Level.FINE));
 	}
 
 	@Override

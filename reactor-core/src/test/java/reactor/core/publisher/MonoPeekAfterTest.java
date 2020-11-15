@@ -22,15 +22,19 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.LongAdder;
 
 import org.junit.jupiter.api.Test;
+import org.assertj.core.api.Assertions;
 
 import reactor.core.Exceptions;
 import reactor.core.Fuseable;
 import reactor.core.scheduler.Schedulers;
+import reactor.test.LoggerUtils;
 import reactor.test.StepVerifier;
+import reactor.test.util.TestLogger;
 import reactor.util.Logger;
 import reactor.util.Loggers;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.fail;
 
 public class MonoPeekAfterTest {
 
@@ -445,48 +449,75 @@ public class MonoPeekAfterTest {
 
 	@Test
 	public void afterSuccessOrErrorCallbackFailureInterruptsOnNextAndThrows() {
-		LongAdder invoked = new LongAdder();
+		TestLogger testLogger = new TestLogger();
+		LoggerUtils.addAppender(testLogger, Operators.class);
 		try {
-			@SuppressWarnings("deprecation")
-			Mono<String> mono = Mono.just("foo")
-			                        .doAfterSuccessOrError((v, t) -> {
-				                        invoked.increment();
-				                        throw new IllegalArgumentException(v);
-			                        });
-			StepVerifier.create(mono)
-			            .expectNext("bar") //irrelevant
-			            .expectErrorMessage("baz") //irrelevant
-			            .verify();
-		}
-		catch (Throwable t) {
-			Throwable e = Exceptions.unwrap(t);
-			assertThat(e.getClass()).isEqualTo(IllegalArgumentException.class);
-			assertThat(e).hasMessage("foo");
-		}
+			LongAdder invoked = new LongAdder();
+			try {
+				@SuppressWarnings("deprecation")
+				Mono<String> mono = Mono.just("foo")
+				                        .doAfterSuccessOrError((v, t) -> {
+					                        invoked.increment();
+					                        throw new IllegalArgumentException(v);
+				                        });
+				StepVerifier.create(mono)
+				            .expectNext("bar") //irrelevant
+				            .expectErrorMessage("baz") //irrelevant
+				            .verify();
+				fail("Exception expected");
+			}
+			catch (Throwable t) {
+				Throwable e = Exceptions.unwrap(t);
+				assertThat(e).isExactlyInstanceOf(AssertionError.class)
+						.hasMessage("expectation \"expectNext(bar)\" failed (expected value: bar; actual value: foo)");
+			}
 
-		assertThat(invoked.intValue()).isEqualTo(1);
+			assertThat(invoked.intValue()).isEqualTo(1);
+			Assertions.assertThat(testLogger.getErrContent())
+			          .contains("Operator called default onErrorDropped")
+			          .contains("IllegalArgumentException")
+			          .contains("foo");
+		}
+		finally {
+			LoggerUtils.resetAppender(Operators.class);
+		}
 	}
 
 	@Test
 	public void afterTerminateCallbackFailureInterruptsOnNextAndThrows() {
-		LongAdder invoked = new LongAdder();
+		TestLogger testLogger = new TestLogger();
+		LoggerUtils.addAppender(testLogger, Operators.class);
 		try {
-			StepVerifier.create(Mono.just("foo")
-			                        .doAfterTerminate(() -> {
-				                        invoked.increment();
-				                        throw new IllegalArgumentException("boom");
-			                        }))
-			            .expectNext("bar") //irrelevant
-			            .expectErrorMessage("baz") //irrelevant
-			            .verify();
-		}
-		catch (Throwable t) {
-			Throwable e = Exceptions.unwrap(t);
-			assertThat(e.getClass()).isEqualTo(IllegalArgumentException.class);
-			assertThat(e).hasMessage("boom");
-		}
+			LongAdder invoked = new LongAdder();
+			try {
+				@SuppressWarnings("deprecation")
+				Mono<String> mono = Mono.just("foo")
+				                        .doAfterSuccessOrError((v, t) -> {
+					                        invoked.increment();
+					                        throw new IllegalArgumentException(v);
+				                        });
+				StepVerifier.create(mono)
+				            .expectNext("bar") //irrelevant
+				            .expectErrorMessage("baz") //irrelevant
+				            .verify();
+				fail("Exception expected");
+			}
+			catch (Throwable t) {
+				Throwable e = Exceptions.unwrap(t);
+				assertThat(e).isExactlyInstanceOf(AssertionError.class)
+						.hasMessage("expectation \"expectNext(bar)\" failed (expected value: bar; actual value: foo)");
+			}
 
-		assertThat(invoked.intValue()).isEqualTo(1);
+			assertThat(invoked.intValue()).isEqualTo(1);
+
+			Assertions.assertThat(testLogger.getErrContent())
+			          .contains("Operator called default onErrorDropped")
+			          .contains("foo")
+			          .contains("IllegalArgumentException");
+		}
+		finally {
+			LoggerUtils.resetAppender(Operators.class);
+		}
 	}
 
 	@Test

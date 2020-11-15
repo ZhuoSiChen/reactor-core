@@ -45,6 +45,7 @@ public class ParallelPeekTest {
 				.isEqualTo(source.getPrefetch())
 				.isEqualTo(test.getPrefetch())
 				.isEqualTo(123);
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 	}
 
 	@Test

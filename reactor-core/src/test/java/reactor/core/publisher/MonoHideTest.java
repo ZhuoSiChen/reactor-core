@@ -17,6 +17,7 @@ package reactor.core.publisher;
 
 import org.junit.jupiter.api.Test;
 import reactor.core.Fuseable;
+import reactor.core.Scannable;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -29,5 +30,15 @@ public class MonoHideTest {
 		f = f.hide();
 		assertThat(f).isNotInstanceOf(Fuseable.ScalarCallable.class);
 		assertThat(f).isInstanceOf(MonoHide.class);
+	}
+
+	@Test
+	public void scanOperator(){
+		Mono<Integer> parent = Mono.just(1);
+		MonoHide<Integer> test = new MonoHide<>(parent);
+
+	    assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
+	    assertThat(test.scan(Scannable.Attr.PREFETCH)).isEqualTo(Integer.MAX_VALUE);
+	    assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 	}
 }

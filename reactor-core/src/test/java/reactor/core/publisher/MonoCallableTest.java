@@ -24,6 +24,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.assertj.core.data.Offset;
 import org.junit.jupiter.api.Test;
 import org.reactivestreams.Subscription;
+
+import reactor.core.Scannable;
 import reactor.test.StepVerifier;
 import reactor.test.subscriber.AssertSubscriber;
 
@@ -186,6 +188,13 @@ public class MonoCallableTest {
 				.expectNext("foo")
 				.verifyComplete();
 
-		assertThat(TimeUnit.NANOSECONDS.toMillis(subscribeTs.get())).isCloseTo(500L, Offset.offset(50L));
-	}
+        assertThat(TimeUnit.NANOSECONDS.toMillis(subscribeTs.get())).isCloseTo(500L, Offset.offset(50L));
+    }
+
+    @Test
+    public void scanOperator(){
+        MonoCallable<Integer> test = new MonoCallable<>(() -> 1);
+
+        assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
+    }
 }

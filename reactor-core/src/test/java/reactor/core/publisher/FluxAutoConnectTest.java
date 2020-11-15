@@ -19,6 +19,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+
 import reactor.core.Disposable;
 import reactor.core.Scannable;
 import reactor.test.MockUtils;
@@ -41,42 +42,42 @@ public class FluxAutoConnectTest {
 	
 	@Test
 	public void connectImmediately() {
-		EmitterProcessor<Integer> e = EmitterProcessor.create();
+		Sinks.Many<Integer> e = Sinks.many().multicast().onBackpressureBuffer();
 
 		AtomicReference<Disposable> cancel = new AtomicReference<>();
 		
-		e.publish().autoConnect(0, cancel::set);
-		
+		e.asFlux().publish().autoConnect(0, cancel::set);
+
 		assertThat(cancel).doesNotHaveValue(null);
-		assertThat(e.downstreamCount()).as("sp has no subscribers?").isNotEqualTo(0L);
+		assertThat(e.currentSubscriberCount()).as("source subscribed").isPositive();
 
 		cancel.get().dispose();
-		assertThat(e.downstreamCount()).as("sp has subscribers?").isEqualTo(0L);
+		assertThat(e.currentSubscriberCount()).as("source subscribed").isZero();
 	}
 
 	@Test
 	public void connectAfterMany() {
-		EmitterProcessor<Integer> e = EmitterProcessor.create();
+		Sinks.Many<Integer> e = Sinks.many().multicast().onBackpressureBuffer();
 
 		AtomicReference<Disposable> cancel = new AtomicReference<>();
 		
-		Flux<Integer> p = e.publish().autoConnect(2, cancel::set);
-		
+		Flux<Integer> p = e.asFlux().publish().autoConnect(2, cancel::set);
+
 		assertThat(cancel).hasValue(null);
-		assertThat(e.downstreamCount()).as("sp has subscribers?").isEqualTo(0L);
-		
+		assertThat(e.currentSubscriberCount()).as("source subscribed").isZero();
+
 		p.subscribe(AssertSubscriber.create());
-		
+
 		assertThat(cancel).hasValue(null);
-		assertThat(e.downstreamCount()).as("sp has subscribers?").isEqualTo(0L);
+		assertThat(e.currentSubscriberCount()).as("source subscribed").isZero();
 
 		p.subscribe(AssertSubscriber.create());
 
 		assertThat(cancel.get()).isNotNull();
-		assertThat(e.downstreamCount()).as("sp has subscribers?").isNotEqualTo(0L);
-		
+		assertThat(e.currentSubscriberCount()).as("source subscribed").isPositive();
+
 		cancel.get().dispose();
-		assertThat(e.downstreamCount()).as("sp has subscribers?").isEqualTo(0L);
+		assertThat(e.currentSubscriberCount()).as("source subscribed").isZero();
 	}
 
 	@Test
@@ -89,5 +90,6 @@ public class FluxAutoConnectTest {
 		assertThat(test.scan(Scannable.Attr.PREFETCH)).isEqualTo(888);
 		assertThat(test.scan(Scannable.Attr.CAPACITY)).isEqualTo(123);
 		assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(source);
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 	}
 }

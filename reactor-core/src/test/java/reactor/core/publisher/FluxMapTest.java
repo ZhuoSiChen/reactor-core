@@ -25,6 +25,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.reactivestreams.Subscription;
+
 import reactor.core.CoreSubscriber;
 import reactor.core.Fuseable;
 import reactor.core.Scannable;
@@ -35,6 +36,7 @@ import reactor.test.subscriber.AssertSubscriber;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static reactor.core.publisher.Sinks.EmitFailureHandler.FAIL_FAST;
 
 public class FluxMapTest extends FluxOperatorTest<String, String> {
 
@@ -152,16 +154,16 @@ public class FluxMapTest extends FluxOperatorTest<String, String> {
 	public void asyncFusion() {
 		AssertSubscriber<Object> ts = AssertSubscriber.create();
 
-		UnicastProcessor<Integer> up =
-				UnicastProcessor.create(new ConcurrentLinkedQueue<>());
+		Sinks.Many<Integer> up = Sinks.unsafe().many().unicast().onBackpressureBuffer(new ConcurrentLinkedQueue<>());
 
-		up.map(v -> v + 1)
+		up.asFlux()
+		  .map(v -> v + 1)
 		  .subscribe(ts);
 
 		for (int i = 1; i < 11; i++) {
-			up.onNext(i);
+			up.emitNext(i, FAIL_FAST);
 		}
-		up.onComplete();
+		up.emitComplete(FAIL_FAST);
 
 		ts.assertValues(2, 3, 4, 5, 6, 7, 8, 9, 10, 11)
 		  .assertNoError()
@@ -172,21 +174,21 @@ public class FluxMapTest extends FluxOperatorTest<String, String> {
 	public void asyncFusionBackpressured() {
 		AssertSubscriber<Object> ts = AssertSubscriber.create(1);
 
-		UnicastProcessor<Integer> up =
-				UnicastProcessor.create(new ConcurrentLinkedQueue<>());
+		Sinks.Many<Integer> up =
+				Sinks.unsafe().many().unicast().onBackpressureBuffer(new ConcurrentLinkedQueue<>());
 
 		Flux.just(1)
 		    .hide()
-		    .flatMap(w -> up.map(v -> v + 1))
+		    .flatMap(w -> up.asFlux().map(v -> v + 1))
 		    .subscribe(ts);
 
-		up.onNext(1);
+		up.emitNext(1, FAIL_FAST);
 
 		ts.assertValues(2)
 		  .assertNoError()
 		  .assertNotComplete();
 
-		up.onComplete();
+		up.emitComplete(FAIL_FAST);
 
 		ts.assertValues(2)
 		  .assertNoError()
@@ -303,6 +305,15 @@ public class FluxMapTest extends FluxOperatorTest<String, String> {
 		  .assertComplete();
 	}
 
+	@Test
+	public void scanOperator(){
+		Flux<Integer> parent = Flux.just(1);
+		FluxMap<Integer, String> test = new FluxMap<>(parent, v -> v.toString());
+
+	    assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
+	    assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
+	}
+
     @Test
     public void scanSubscriber() {
         CoreSubscriber<String> actual = new LambdaSubscriber<>(null, e -> {}, null, null);
@@ -312,6 +323,7 @@ public class FluxMapTest extends FluxOperatorTest<String, String> {
 
         assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
         assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(actual);
+        assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 
         assertThat(test.scan(Scannable.Attr.TERMINATED)).isFalse();
         test.onError(new IllegalStateException("boom"));
@@ -328,11 +340,19 @@ public class FluxMapTest extends FluxOperatorTest<String, String> {
 
         assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
         assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(actual);
+        assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 
         assertThat(test.scan(Scannable.Attr.TERMINATED)).isFalse();
         test.onError(new IllegalStateException("boom"));
         assertThat(test.scan(Scannable.Attr.TERMINATED)).isTrue();
     }
+
+	@Test
+	public void scanFuseableOperator(){
+		FluxMapFuseable<Integer, String> test = new FluxMapFuseable<>(Flux.just(1), v -> v.toString());
+
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
+	}
 
     @Test
     public void scanFuseableSubscriber() {
@@ -344,6 +364,7 @@ public class FluxMapTest extends FluxOperatorTest<String, String> {
 
         assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
         assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(actual);
+        assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 
         assertThat(test.scan(Scannable.Attr.TERMINATED)).isFalse();
         test.onError(new IllegalStateException("boom"));
@@ -361,6 +382,7 @@ public class FluxMapTest extends FluxOperatorTest<String, String> {
 
         assertThat(test.scan(Scannable.Attr.PARENT)).isSameAs(parent);
         assertThat(test.scan(Scannable.Attr.ACTUAL)).isSameAs(actual);
+		assertThat(test.scan(Scannable.Attr.RUN_STYLE)).isSameAs(Scannable.Attr.RunStyle.SYNC);
 
         assertThat(test.scan(Scannable.Attr.TERMINATED)).isFalse();
         test.onError(new IllegalStateException("boom"));

@@ -503,7 +503,7 @@ public class ParallelFluxTest {
 		                         .doOnNext(v -> between.add(Thread.currentThread()
 		                                                          .getName()))
 		                         .parallel(2, 1)
-		                         .runOn(Schedulers.elastic(), 1)
+		                         .runOn(Schedulers.boundedElastic(), 1)
 		                         .map(v -> {
 			                         processing.putIfAbsent(Thread.currentThread()
 			                                                      .getName(), "");
@@ -525,7 +525,7 @@ public class ParallelFluxTest {
 		                   .startsWith("single-");
 
 		assertThat(processing.keySet())
-				.allSatisfy(k -> assertThat(k).startsWith("elastic-"));
+				.allSatisfy(k -> assertThat(k).startsWith("boundedElastic-"));
 	}
 
 	@Test
@@ -1045,12 +1045,12 @@ public class ParallelFluxTest {
 		Flux.just(1, 2, 3)
 		    .parallel(3)
 		    .doOnEach(s -> {
-			    String valueFromContext = s.getContext()
+			    String valueFromContext = s.getContextView()
 			                               .getOrDefault("test", null);
 			    results.add(s + " " + valueFromContext);
 		    })
 		    .reduce(Integer::sum)
-		    .subscriberContext(Context.of("test", "Hello!"))
+		    .contextWrite(Context.of("test", "Hello!"))
 		    .block();
 
 		assertThat(results).containsExactlyInAnyOrder(
