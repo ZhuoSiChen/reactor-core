@@ -11,7 +11,6 @@ public class FluxTest {
 	@Test
 	public void TestFluxNever(){
 		Flux<Integer> just = Flux.just(1);
-		;
 		just.map(integer -> integer.toString()).subscribe(string ->System.out.println(string));
 		Flux.never().subscribe(o -> {
 			System.out.println("aaaaaaaaa");
